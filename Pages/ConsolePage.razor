@@ -1,0 +1,77 @@
+@page "/console/{ConsoleId}"
+@inject IRomRepository RomRepo
+@inject NavigationManager Nav
+
+<PageTitle>@(_console?.Name ?? "Loading...") — Assemulator</PageTitle>
+
+@if (_console is null && !_loading)
+{
+    <div class="not-found">
+        <h2>Console not found.</h2>
+        <a href="/">← Back to Home</a>
+    </div>
+}
+else
+{
+    <!-- Console Hero -->
+    <div class="console-hero" style="background-color: @(_console?.BackgroundColor ?? "#1a1a2e")">
+        <div class="console-hero-inner">
+            @if (!string.IsNullOrEmpty(_console?.ImageUrl))
+            {
+                <img class="console-logo" src="@_console.ImageUrl" alt="@_console.Name" />
+            }
+            <div class="console-meta">
+                <h1 class="console-name">@_console?.Name</h1>
+                <p class="console-desc">@_console?.Manufacturer · @_console?.Year</p>
+                <p class="console-blurb">@_console?.Description</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ROM Grid -->
+    <div class="rom-section">
+        @if (_loading)
+        {
+            <div class="loading-center">
+                <MudProgressCircular Color="Color.Error" Indeterminate="true" />
+            </div>
+        }
+        else if (!_roms.Any())
+        {
+            <p class="no-roms">No ROMs found. Add entries to the manifest for this console.</p>
+        }
+        else
+        {
+            <h2 class="section-title">Games</h2>
+            <div class="rom-grid">
+                @foreach (var rom in _roms)
+                {
+                    <RomCard Rom="rom" ConsoleId="ConsoleId" />
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string ConsoleId { get; set; } = "";
+
+    private ConsoleInfo? _console;
+    private List<RomInfo> _roms = [];
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _roms = [];
+        _console = null;
+
+        var consoles = await RomRepo.GetConsolesAsync();
+        _console = consoles.FirstOrDefault(c => c.Id == ConsoleId);
+
+        if (_console is not null && !string.IsNullOrEmpty(_console.RomManifestUrl))
+            _roms = await RomRepo.GetRomsAsync(_console.RomManifestUrl);
+
+        _loading = false;
+    }
+}

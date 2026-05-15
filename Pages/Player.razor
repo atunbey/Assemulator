@@ -1,0 +1,50 @@
+@page "/play/{ConsoleId}/{*RomUrl}"
+@inject IRomRepository RomRepo
+@inject IJSRuntime JS
+
+<PageTitle>@(_romName) — Assemulator</PageTitle>
+
+<div class="player-page">
+    <div class="player-header">
+        <a href="/console/@ConsoleId" class="back-link">← @(_console?.Name ?? ConsoleId)</a>
+        <span class="playing-title">@_romName</span>
+    </div>
+
+    @if (_console is not null)
+    {
+        <EmulatorPlayer Core="@_console.EmulatorCore"
+                        RomUrl="@System.Net.WebUtility.UrlDecode(RomUrl ?? "")"
+                        BiosUrl="@_console.BiosUrl" />
+    }
+    else if (_loading)
+    {
+        <div class="player-loading">
+            <MudProgressCircular Color="Color.Error" Indeterminate="true" Size="Size.Large" />
+            <p>Loading emulator...</p>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string ConsoleId { get; set; } = "";
+    [Parameter] public string? RomUrl { get; set; }
+
+    private ConsoleInfo? _console;
+    private string _romName = "Loading...";
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        var consoles = await RomRepo.GetConsolesAsync();
+        _console = consoles.FirstOrDefault(c => c.Id == ConsoleId);
+
+        if (RomUrl is not null)
+        {
+            var decoded = System.Net.WebUtility.UrlDecode(RomUrl);
+            _romName = Path.GetFileNameWithoutExtension(decoded);
+        }
+
+        _loading = false;
+    }
+}

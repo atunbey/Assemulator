@@ -1,0 +1,57 @@
+@page "/"
+@inject IRomRepository RomRepo
+
+<PageTitle>Assemulator</PageTitle>
+
+<div class="home-page">
+    <!-- Hero Banner -->
+    <div class="hero-banner" style="background-image: url('images/hero-bg.jpg')">
+        <div class="hero-overlay">
+            <div class="hero-content">
+                <div class="hero-logo-text">ASSEMULATOR</div>
+                <p class="hero-tagline">Classic gaming. Browser-native. No install.</p>
+                <div class="hero-actions">
+                    <a href="/console/nes" class="btn-play">▶ Start Playing</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Console Rows -->
+    @if (_loading)
+    {
+        <div class="loading-row">
+            <MudProgressCircular Color="Color.Error" Indeterminate="true" />
+        </div>
+    }
+    else
+    {
+        <!-- Group consoles by manufacturer -->
+        @foreach (var group in _consolesByManufacturer)
+        {
+            <section class="console-row">
+                <h2 class="row-title">@group.Key</h2>
+                <div class="card-strip">
+                    @foreach (var console in group.Value)
+                    {
+                        <ConsoleCard Console="console" />
+                    }
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private Dictionary<string, List<ConsoleInfo>> _consolesByManufacturer = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var consoles = await RomRepo.GetConsolesAsync();
+        _consolesByManufacturer = consoles
+            .GroupBy(c => c.Manufacturer)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        _loading = false;
+    }
+}

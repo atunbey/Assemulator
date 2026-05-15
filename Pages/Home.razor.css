@@ -1,0 +1,115 @@
+.home-page {
+    background-color: #141414;
+    min-height: 100vh;
+    padding-bottom: 3rem;
+}
+
+/* ── Hero ── */
+.hero-banner {
+    position: relative;
+    height: 56vw;
+    max-height: 80vh;
+    min-height: 300px;
+    background-size: cover;
+    background-position: center top;
+}
+
+.hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        to right,
+        rgba(20, 20, 20, 0.9) 0%,
+        rgba(20, 20, 20, 0.4) 60%,
+        transparent 100%
+    ),
+    linear-gradient(
+        to top,
+        #141414 0%,
+        transparent 30%
+    );
+    display: flex;
+    align-items: center;
+}
+
+.hero-content {
+    padding: 0 4%;
+    max-width: 40%;
+}
+
+.hero-logo-text {
+    font-size: clamp(2rem, 5vw, 4rem);
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    color: #e50914;
+    font-family: 'Courier New', monospace;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.8);
+    margin-bottom: 1rem;
+}
+
+.hero-tagline {
+    font-size: clamp(0.9rem, 1.5vw, 1.2rem);
+    color: #e5e5e5;
+    margin-bottom: 1.5rem;
+}
+
+.hero-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.btn-play {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.8rem;
+    background: #e50914;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: background 0.2s;
+}
+
+.btn-play:hover {
+    background: #f40612;
+    color: white;
+}
+
+/* ── Console rows ── */
+.console-row {
+    padding: 1.5rem 4% 0.5rem;
+}
+
+.row-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #e5e5e5;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.05em;
+}
+
+.card-strip {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: #555 transparent;
+}
+
+.card-strip::-webkit-scrollbar {
+    height: 4px;
+}
+
+.card-strip::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 2px;
+}
+
+.loading-row {
+    display: flex;
+    justify-content: center;
+    padding: 4rem;
+}

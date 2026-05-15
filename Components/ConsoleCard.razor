@@ -1,0 +1,25 @@
+@inject NavigationManager Nav
+
+<div class="console-card" @onclick="Navigate"
+     style="--accent: @Console.AccentColor; --bg: @Console.BackgroundColor">
+    <div class="card-art">
+        @if (!string.IsNullOrEmpty(Console.ImageUrl))
+        {
+            <img src="@Console.ImageUrl" alt="@Console.Name" loading="lazy" />
+        }
+        else
+        {
+            <div class="card-art-fallback">@Console.Name[0]</div>
+        }
+    </div>
+    <div class="card-info">
+        <span class="card-name">@Console.Name</span>
+        <span class="card-year">@Console.Year</span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ConsoleInfo Console { get; set; } = default!;
+
+    private void Navigate() => Nav.NavigateTo($"/console/{Console.Id}");
+}

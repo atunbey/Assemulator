@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Super Mario Bros.",
+    "fileName": "super-mario-bros.nes",
+    "url": "roms/nes/super-mario-bros.nes",
+    "coverUrl": "images/covers/nes/super-mario-bros.jpg",
+    "description": "The iconic platformer that defined a generation. Save Princess Peach from Bowser.",
+    "year": 1985,
+    "genre": "Platform",
+    "developer": "Nintendo",
+    "players": "1-2"
+  },
+  {
+    "name": "Mega Man 2",
+    "fileName": "mega-man-2.nes",
+    "url": "roms/nes/mega-man-2.nes",
+    "coverUrl": "images/covers/nes/mega-man-2.jpg",
+    "description": "The pinnacle of the Mega Man series. Eight robot masters, legendary soundtrack.",
+    "year": 1988,
+    "genre": "Action",
+    "developer": "Capcom",
+    "players": "1"
+  }
+]

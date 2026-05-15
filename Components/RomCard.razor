@@ -1,0 +1,37 @@
+@inject NavigationManager Nav
+
+<div class="rom-card" @onclick="Play">
+    <div class="rom-cover">
+        @if (!string.IsNullOrEmpty(Rom.CoverUrl))
+        {
+            <img src="@Rom.CoverUrl" alt="@Rom.Name" loading="lazy" />
+        }
+        else
+        {
+            <div class="rom-cover-fallback">
+                <span class="fallback-icon">🕹</span>
+            </div>
+        }
+        <div class="rom-hover-overlay">
+            <span class="play-icon">▶</span>
+        </div>
+    </div>
+    <div class="rom-meta">
+        <span class="rom-name" title="@Rom.Name">@Rom.Name</span>
+        @if (Rom.Year > 0)
+        {
+            <span class="rom-year">@Rom.Year</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RomInfo Rom { get; set; } = default!;
+    [Parameter, EditorRequired] public string ConsoleId { get; set; } = "";
+
+    private void Play()
+    {
+        var encoded = Uri.EscapeDataString(Rom.Url);
+        Nav.NavigateTo($"/play/{ConsoleId}/{encoded}");
+    }
+}

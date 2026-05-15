@@ -1,0 +1,15 @@
+services:
+  assemulator:
+    build: .
+    image: assemulator:latest
+    container_name: assemulator
+    restart: unless-stopped
+    ports:
+      - "8088:80"
+    volumes:
+      # Mount your ROM storage so roms.json can reference local paths
+      # or point roms.json entries at Nextcloud URLs instead
+      - ./wwwroot/data:/usr/share/nginx/html/data
+      - ./wwwroot/roms:/usr/share/nginx/html/roms
+      - ./wwwroot/images:/usr/share/nginx/html/images
+      - ./wwwroot/bios:/usr/share/nginx/html/bios

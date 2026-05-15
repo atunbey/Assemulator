@@ -1,0 +1,62 @@
+.console-card {
+    flex: 0 0 160px;
+    cursor: pointer;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--bg, #1a1a2e);
+    border: 1px solid #2a2a2a;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    position: relative;
+}
+
+.console-card:hover {
+    transform: scale(1.08);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--accent, #e50914);
+    z-index: 10;
+}
+
+.card-art {
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--bg, #1a1a2e) 0%, rgba(0,0,0,0.4) 100%);
+    padding: 1rem;
+}
+
+.card-art img {
+    max-height: 70px;
+    max-width: 130px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.card-art-fallback {
+    font-size: 3rem;
+    font-weight: 900;
+    color: var(--accent, #e50914);
+    opacity: 0.6;
+}
+
+.card-info {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0,0,0,0.3);
+}
+
+.card-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #e5e5e5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 110px;
+}
+
+.card-year {
+    font-size: 0.7rem;
+    color: #888;
+}

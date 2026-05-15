@@ -1,0 +1,20 @@
+.emulator-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    padding: 1rem;
+}
+
+#game {
+    width: 100%;
+    max-width: 960px;
+    aspect-ratio: 4 / 3;
+}
+
+/* EmulatorJS overrides – keep canvas crisp */
+#game canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}

@@ -1,0 +1,52 @@
+/* ── Top nav ── */
+.top-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    padding: 0 4%;
+    height: 68px;
+    background: linear-gradient(to bottom, #000000cc, transparent);
+    transition: background 0.3s;
+}
+
+.top-nav:hover,
+.top-nav.scrolled {
+    background: #141414;
+}
+
+.nav-logo {
+    font-size: 1.8rem;
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    color: #e50914;
+    text-decoration: none;
+    font-family: 'Courier New', monospace;
+    margin-right: 2rem;
+}
+
+.nav-links a {
+    color: #e5e5e5;
+    text-decoration: none;
+    margin-right: 1.2rem;
+    font-size: 0.85rem;
+    transition: color 0.2s;
+}
+
+.nav-links a:hover {
+    color: #ffffff;
+}
+
+/* ── Main content ── */
+.assemulator-shell {
+    min-height: 100vh;
+    background-color: #141414;
+    color: #ffffff;
+}
+
+.main-content {
+    padding-top: 68px;
+}
