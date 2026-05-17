@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -eu
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+old_domain=$YNH_APP_OLD_DOMAIN
+old_path=$YNH_APP_OLD_PATH
+new_domain=$YNH_APP_NEW_DOMAIN
+new_path=$YNH_APP_NEW_PATH
+
+[ -n "$old_domain" ] || ynh_die --message="Missing old domain"
+[ -n "$old_path" ] || ynh_die --message="Missing old path"
+[ -n "$new_domain" ] || ynh_die --message="Missing new domain"
+[ -n "$new_path" ] || ynh_die --message="Missing new path"
+
+ynh_script_progression --message="Updating URL settings..."
+ynh_app_setting_set --app=$app --key=domain --value=$new_domain
+ynh_app_setting_set --app=$app --key=path --value=$new_path
+
+ynh_script_progression --message="Refreshing nginx reverse proxy..."
+ynh_add_nginx_config
+ynh_systemctl --service=nginx --action=reload

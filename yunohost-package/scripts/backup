@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -eu
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+ynh_script_progression --message="Backing up Assemulator data..."
+
+# Includes Docker Compose definition and mounted persistent directories.
+ynh_backup --src_path="$final_path"

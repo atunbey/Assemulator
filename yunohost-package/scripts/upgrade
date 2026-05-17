@@ -1,0 +1,33 @@
+#!/bin/bash
+
+set -eu
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+domain=$(ynh_app_setting_get --app=$app --key=domain)
+path_url=$(ynh_app_setting_get --app=$app --key=path)
+app_port=$(ynh_app_setting_get --app=$app --key=port)
+image=$(ynh_app_setting_get --app=$app --key=image)
+
+[ -n "$domain" ] || ynh_die --message="Missing domain setting"
+[ -n "$path_url" ] || ynh_die --message="Missing path setting"
+[ -n "$app_port" ] || ynh_die --message="Missing port setting"
+[ -n "$image" ] || ynh_die --message="Missing image setting"
+
+ynh_script_progression --message="Refreshing docker-compose config..."
+cp ../conf/docker-compose.yml "$final_path/docker-compose.yml"
+ynh_replace_string --match_string="__APP__" --replace_string="$app" --target_file="$final_path/docker-compose.yml"
+ynh_replace_string --match_string="__PORT__" --replace_string="$app_port" --target_file="$final_path/docker-compose.yml"
+ynh_replace_string --match_string="__APPDIR__" --replace_string="$final_path" --target_file="$final_path/docker-compose.yml"
+ynh_replace_string --match_string="__IMAGE__" --replace_string="$image" --target_file="$final_path/docker-compose.yml"
+
+ynh_script_progression --message="Updating reverse proxy config..."
+ynh_add_nginx_config
+
+ynh_script_progression --message="Pulling latest image and restarting app..."
+ynh_exec_warn_less docker compose -f "$final_path/docker-compose.yml" pull
+ynh_exec_warn_less docker compose -f "$final_path/docker-compose.yml" up -d
+
+ynh_script_progression --message="Reloading nginx..."
+ynh_systemctl --service=nginx --action=reload
