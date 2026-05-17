@@ -1,0 +1,64 @@
+@inject NavigationManager Nav
+
+@if (_open)
+{
+    <div class="variant-backdrop" @onclick="Close"></div>
+    <div class="variant-picker">
+        <div class="variant-picker-header">
+            <span class="variant-picker-title">@GameName</span>
+            <button class="variant-close" @onclick="Close">✕</button>
+        </div>
+        <p class="variant-hint">Choose a version to play:</p>
+        <ul class="variant-list">
+            @foreach (var v in Variants)
+            {
+                <li class="variant-item" @onclick="() => Play(v)">
+                    <span class="variant-label">@v.Label</span>
+                    @if (!string.IsNullOrEmpty(v.Region))
+                    {
+                        <span class="variant-region">@v.Region</span>
+                    }
+                    @if (!string.IsNullOrEmpty(v.CoreOverride))
+                    {
+                        <span class="variant-core">@v.CoreOverride</span>
+                    }
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string ConsoleId { get; set; } = "";
+    [Parameter, EditorRequired] public string GameName { get; set; } = "";
+    [Parameter, EditorRequired] public List<RomVariant> Variants { get; set; } = [];
+    [Parameter] public string DefaultCore { get; set; } = "";
+
+    private bool _open;
+
+    public void Open() => _open = true;
+    private void Close() => _open = false;
+
+    private void Play(RomVariant v)
+    {
+        _open = false;
+        var url = EmulatorLaunchUrlBuilder.Build(
+            ConsoleId,
+            v.Url,
+            DefaultCore,
+            v.CoreOverride,
+            v.RomsetName,
+            v.RomsetMode,
+            v.BiosUrl,
+            v.RequiredRomsets,
+            BuildReturnUrl());
+
+        Nav.NavigateTo(url);
+    }
+
+    private string BuildReturnUrl()
+    {
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        return string.IsNullOrWhiteSpace(relative) ? "/" : $"/{relative}";
+    }
+}

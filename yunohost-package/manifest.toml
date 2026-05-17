@@ -1,0 +1,33 @@
+packaging_format = 2
+
+id = "assemulator"
+name = "Assemulator"
+description.en = "Retro game launcher and web emulator frontend"
+
+version = "0.1.0~ynh1"
+
+maintainers = ["atunbey"]
+
+[upstream]
+license = "MIT"
+website = "https://github.com/atunbey/Assemulator"
+code = "https://github.com/atunbey/Assemulator"
+
+[integration]
+yunohost = ">= 12.0"
+architectures = ["amd64", "arm64"]
+multi_instance = false
+ldap = false
+sso = false
+disk = "1G"
+ram.build = "512M"
+ram.runtime = "256M"
+
+[install.domain]
+type = "domain"
+
+[install.path]
+type = "path"
+default = "/assemulator"
+
+[resources]

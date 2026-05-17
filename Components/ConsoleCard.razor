@@ -2,6 +2,10 @@
 
 <div class="console-card" @onclick="Navigate"
      style="--accent: @Console.AccentColor; --bg: @Console.BackgroundColor">
+    @if (RomCount > 0)
+    {
+        <span class="rom-count-badge">@RomCount</span>
+    }
     <div class="card-art">
         @if (!string.IsNullOrEmpty(Console.ImageUrl))
         {
@@ -20,6 +24,7 @@
 
 @code {
     [Parameter, EditorRequired] public ConsoleInfo Console { get; set; } = default!;
+    [Parameter] public int RomCount { get; set; }
 
     private void Navigate() => Nav.NavigateTo($"/console/{Console.Id}");
 }

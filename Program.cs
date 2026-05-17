@@ -13,6 +13,7 @@ builder.Services.AddScoped(sp => new HttpClient
 });
 
 builder.Services.AddScoped<IRomRepository, RomRepository>();
+builder.Services.AddScoped<INextcloudService, NextcloudService>();
 builder.Services.AddMudServices();
 
 await builder.Build().RunAsync();

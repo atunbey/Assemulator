@@ -1,5 +1,8 @@
 @page "/"
 @inject IRomRepository RomRepo
+@inject INextcloudService Nextcloud
+@inject IJSRuntime JS
+@inject HttpClient Http
 
 <PageTitle>Assemulator</PageTitle>
 
@@ -12,10 +15,48 @@
                 <p class="hero-tagline">Classic gaming. Browser-native. No install.</p>
                 <div class="hero-actions">
                     <a href="/console/nes" class="btn-play">▶ Start Playing</a>
+                    <button class="btn-catalog" @onclick="RebuildAllCatalogAsync" disabled="@_catalogBusy">
+                        @if (_catalogBusy)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:14px;height:14px;vertical-align:middle;" />
+                        }
+                        else
+                        {
+                            <span>↺ Rebuild All Catalogs</span>
+                        }
+                    </button>
+                    <button class="btn-catalog" @onclick="ExportUnifiedManifestAsync" disabled="@(_catalogBusy || _latestManifestEntries.Count == 0)">
+                        ⬇ Export Unified Manifest
+                    </button>
+                    <button class="btn-catalog" @onclick="ExportValidationReportAsync" disabled="@(_catalogBusy || _latestValidationReport.Count == 0)">
+                        ⬇ Export Validation Report
+                    </button>
                 </div>
             </div>
         </div>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(_catalogError))
+    {
+        <div class="catalog-error">
+            Catalog refresh error: @_catalogError
+        </div>
+    }
+
+    @if (_latestValidationReport.Count > 0)
+    {
+        <div class="catalog-validation">
+            <strong>Validation:</strong>
+            Verified: @_latestValidationReport.Count(r => r.Status == "verified-listxml") |
+            Inferred: @_latestValidationReport.Count(r => r.Status == "inferred-basename") |
+            Missing/Unresolved: @_latestValidationReport.Count(r => r.Status == "missing-romset" || r.Status == "romset-not-in-listxml") |
+            Unverified: @_latestValidationReport.Count(r => r.Status == "unverified-listxml-unavailable") |
+            @if (!_mameLookupAvailable)
+            {
+                <span>Listxml unavailable (report still exported).</span>
+            }
+        </div>
+    }
 
     <!-- Console Rows -->
     @if (_loading)
@@ -34,7 +75,7 @@
                 <div class="card-strip">
                     @foreach (var console in group.Value)
                     {
-                        <ConsoleCard Console="console" />
+                        <ConsoleCard Console="console" RomCount="@(_romCounts.GetValueOrDefault(console.Id))" />
                     }
                 </div>
             </section>
@@ -43,15 +84,604 @@
 </div>
 
 @code {
+    private const string MameListXmlFallbackPath = "data/mame-listxml.xml";
+
+    private sealed class MameMachine
+    {
+        public string Name { get; init; } = "";
+        public string Description { get; init; } = "";
+        public List<string> RomNames { get; init; } = [];
+    }
+
+    private sealed class VariantValidationRow
+    {
+        public string Game { get; init; } = "";
+        public string Platform { get; init; } = "";
+        public string Label { get; init; } = "";
+        public string ArchiveFile { get; init; } = "";
+        public string Core { get; init; } = "";
+        public string Romset { get; init; } = "";
+        public string RomsetSource { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string Message { get; init; } = "";
+    }
+
     private bool _loading = true;
+    private bool _catalogBusy = true;
+    private string? _catalogError;
     private Dictionary<string, List<ConsoleInfo>> _consolesByManufacturer = [];
+    private Dictionary<string, int> _romCounts = [];
+    private List<RomManifestEntry> _latestManifestEntries = [];
+    private List<VariantValidationRow> _latestValidationReport = [];
+    private Dictionary<string, MameMachine> _mameLookup = new(StringComparer.OrdinalIgnoreCase);
+    private bool _mameLookupAvailable;
 
     protected override async Task OnInitializedAsync()
     {
-        var consoles = await RomRepo.GetConsolesAsync();
-        _consolesByManufacturer = consoles
-            .GroupBy(c => c.Manufacturer)
-            .ToDictionary(g => g.Key, g => g.ToList());
-        _loading = false;
+        try
+        {
+            var consoles = await RomRepo.GetConsolesAsync();
+
+            _consolesByManufacturer = consoles
+                .GroupBy(c => c.Manufacturer)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            await RebuildAllCatalogAsync(runEnrichment: false);
+        }
+        catch (Exception ex)
+        {
+            _catalogError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string DetermineRomsetMode(string effectiveCore, string platform)
+    {
+        var core = (effectiveCore ?? "").Trim().ToLowerInvariant();
+        if (core == "fbneo") return "require";
+        if (core == "mame2003" || core == "mame2003_plus") return "omit";
+        if (string.Equals(platform, "Arcade", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(core)) return "require";
+        return "omit";
+    }
+
+    private async Task EnsureMameLookupLoadedAsync(bool forceRefresh)
+    {
+        if (_mameLookup.Count > 0 && !forceRefresh)
+            return;
+
+        _mameLookup = new Dictionary<string, MameMachine>(StringComparer.OrdinalIgnoreCase);
+        _mameLookupAvailable = false;
+
+        var sources = new[] { Nextcloud.BuildPublicFileUrl("mame-listxml.xml"), MameListXmlFallbackPath };
+        foreach (var source in sources)
+        {
+            try
+            {
+                var xml = await Http.GetStringAsync(source);
+                if (string.IsNullOrWhiteSpace(xml))
+                    continue;
+
+                var doc = System.Xml.Linq.XDocument.Parse(xml);
+                var machines = doc.Root?.Elements("machine") ?? [];
+                foreach (var machine in machines)
+                {
+                    var name = machine.Attribute("name")?.Value?.Trim();
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+
+                    var description = machine.Element("description")?.Value?.Trim() ?? "";
+                    var romNames = machine
+                        .Elements("rom")
+                        .Select(r => r.Attribute("name")?.Value?.Trim())
+                        .Where(n => !string.IsNullOrWhiteSpace(n))
+                        .Cast<string>()
+                        .ToList();
+
+                    _mameLookup[name.ToLowerInvariant()] = new MameMachine
+                    {
+                        Name = name,
+                        Description = description,
+                        RomNames = romNames,
+                    };
+                }
+
+                if (_mameLookup.Count > 0)
+                {
+                    _mameLookupAvailable = true;
+                    return;
+                }
+            }
+            catch
+            {
+                // Try next source.
+            }
+        }
+    }
+
+    private static bool IsArcadeCore(string core)
+    {
+        return string.Equals(core, "fbneo", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(core, "mame2003", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(core, "mame2003_plus", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string DeriveRomsetFromArchive(string archiveFile)
+    {
+        return System.IO.Path.GetFileNameWithoutExtension((archiveFile ?? "").Trim()).ToLowerInvariant();
+    }
+
+    private MameMachine? FindMachineByRomsetOnly(string romset)
+    {
+        if (_mameLookup.Count == 0 || string.IsNullOrWhiteSpace(romset))
+            return null;
+
+        _mameLookup.TryGetValue(romset.Trim().ToLowerInvariant(), out var machine);
+        return machine;
+    }
+
+    private VariantValidationRow BuildValidationRow(
+        string game,
+        string platform,
+        string label,
+        string archiveFile,
+        string core,
+        string romset,
+        string romsetSource,
+        bool isArcadeCore)
+    {
+        if (!isArcadeCore)
+        {
+            return new VariantValidationRow
+            {
+                Game = game,
+                Platform = platform,
+                Label = label,
+                ArchiveFile = archiveFile,
+                Core = core,
+                Romset = romset,
+                RomsetSource = romsetSource,
+                Status = "not-applicable",
+                Message = "Non-arcade core",
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(romset))
+        {
+            return new VariantValidationRow
+            {
+                Game = game,
+                Platform = platform,
+                Label = label,
+                ArchiveFile = archiveFile,
+                Core = core,
+                Romset = romset,
+                RomsetSource = romsetSource,
+                Status = "missing-romset",
+                Message = "No romset name provided",
+            };
+        }
+
+        if (!_mameLookupAvailable)
+        {
+            return new VariantValidationRow
+            {
+                Game = game,
+                Platform = platform,
+                Label = label,
+                ArchiveFile = archiveFile,
+                Core = core,
+                Romset = romset,
+                RomsetSource = romsetSource,
+                Status = romsetSource == "basename-fallback" ? "inferred-basename" : "unverified-listxml-unavailable",
+                Message = "Listxml unavailable",
+            };
+        }
+
+        var machine = FindMachineByRomsetOnly(romset);
+        if (machine is not null)
+        {
+            return new VariantValidationRow
+            {
+                Game = game,
+                Platform = platform,
+                Label = label,
+                ArchiveFile = archiveFile,
+                Core = core,
+                Romset = romset,
+                RomsetSource = romsetSource,
+                Status = romsetSource == "basename-fallback" ? "inferred-basename" : "verified-listxml",
+                Message = $"Matched listxml: {machine.Name}",
+            };
+        }
+
+        return new VariantValidationRow
+        {
+            Game = game,
+            Platform = platform,
+            Label = label,
+            ArchiveFile = archiveFile,
+            Core = core,
+            Romset = romset,
+            RomsetSource = romsetSource,
+            Status = "romset-not-in-listxml",
+            Message = "Romset not found in listxml",
+        };
+    }
+
+    private MameMachine? ResolveMameMachine(string archiveFile, string romsetName)
+    {
+        if (_mameLookup.Count == 0)
+            return null;
+
+        static IEnumerable<string> CandidateKeys(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+                yield break;
+
+            var lower = input.Trim().ToLowerInvariant();
+            yield return lower;
+
+            var compact = new string(lower.Where(char.IsLetterOrDigit).ToArray());
+            if (!string.IsNullOrWhiteSpace(compact) && !string.Equals(compact, lower, StringComparison.Ordinal))
+                yield return compact;
+        }
+
+        var filenameNoExt = System.IO.Path.GetFileNameWithoutExtension(archiveFile ?? "");
+        foreach (var key in CandidateKeys(romsetName).Concat(CandidateKeys(filenameNoExt)))
+        {
+            if (_mameLookup.TryGetValue(key, out var machine))
+                return machine;
+        }
+
+        return null;
+    }
+
+    private static string GetFileDescription(string filename, string core, string region)
+    {
+        var name = (filename ?? "").ToLowerInvariant();
+        var normalizedCore = (core ?? "").ToLowerInvariant();
+        var normalizedRegion = (region ?? "").ToLowerInvariant();
+
+        if (name.Contains("japan") || name.Contains("(j)") || name.Contains("_j")) return "Japan release file";
+        if (name.Contains("usa") || name.Contains("(u)") || name.Contains("_u")) return "USA release file";
+        if (name.Contains("world") || name.Contains("(w)") || name.Contains("europe") || name.Contains("(e)")) return "World/Europe release file";
+
+        if (normalizedRegion == "japan") return "Japan release file";
+        if (normalizedRegion == "usa") return "USA release file";
+        if (normalizedRegion == "world") return "World release file";
+        if (normalizedRegion == "europe") return "Europe release file";
+
+        if (name.StartsWith("82s") || name.Contains(".prom")) return "PROM/lookup data";
+        if (name.Contains("prg") || name.EndsWith(".prg")) return "Program ROM";
+        if (name.Contains("cpu") || name.Contains("code") || name.Contains("main") || name.Contains("program")) return "Program ROM";
+        if (name.Contains("chr") || name.Contains("gfx") || name.Contains("tile") || name.Contains("sprite")) return "Graphics ROM";
+        if (name.Contains("snd") || name.Contains("sound") || name.Contains("adpcm") || name.Contains("pcm") || name.Contains("voice")) return "Audio ROM";
+
+        if (normalizedCore == "fbneo" || normalizedCore == "mame2003" || normalizedCore == "mame2003_plus")
+            return "Arcade ROM chip file";
+
+        return "Game ROM file";
+    }
+
+    private async Task<List<string>> GetZipEntriesAsync(string archiveFile)
+    {
+        if (string.IsNullOrWhiteSpace(archiveFile))
+            return [];
+
+        try
+        {
+            var url = Nextcloud.BuildPublicFileUrl(archiveFile);
+            using var stream = await Http.GetStreamAsync(url);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            using var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read, leaveOpen: false);
+            return zip.Entries
+                .Where(e => !string.IsNullOrWhiteSpace(e.Name))
+                .Select(e => e.FullName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private async Task<List<RomFileEntry>> BuildEnrichedFilesAsync(
+        List<RomFileEntry>? existingFiles,
+        string archiveFile,
+        string romsetName,
+        string core,
+        string region,
+        MameMachine? mameMachine,
+        bool runEnrichment)
+    {
+        if (existingFiles is { Count: > 0 })
+            return existingFiles;
+
+        if (!runEnrichment)
+            return [];
+
+        if (mameMachine is not null && mameMachine.RomNames.Count > 0)
+        {
+            return mameMachine.RomNames
+                .Select(name => new RomFileEntry
+                {
+                    Filename = name,
+                    Description = GetFileDescription(name, core, region),
+                    Core = core,
+                })
+                .ToList();
+        }
+
+        var zipEntries = await GetZipEntriesAsync(archiveFile);
+        return zipEntries
+            .Select(name => new RomFileEntry
+            {
+                Filename = name,
+                Description = GetFileDescription(name, core, region),
+                Core = core,
+            })
+            .ToList();
+    }
+
+    private async Task<List<RomManifestEntry>> BuildUnifiedManifestSnapshotAsync(List<ConsoleInfo> consoles, bool runEnrichment)
+    {
+        await EnsureMameLookupLoadedAsync(forceRefresh: runEnrichment);
+        _latestValidationReport = [];
+
+        var allManifest = await RomRepo.GetAllManifestEntriesAsync();
+        var byPlatform = allManifest
+            .GroupBy(e => e.Platform)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var merged = new List<RomManifestEntry>();
+
+        foreach (var console in consoles)
+        {
+            List<RomInfo> rawRoms = [];
+            if (!string.IsNullOrEmpty(console.NextcloudFolder))
+                rawRoms = await Nextcloud.ListRomsAsync(console.NextcloudFolder, console.RomExtension);
+            else if (!string.IsNullOrEmpty(console.RomManifestUrl))
+                rawRoms = await RomRepo.GetRomsAsync(console.RomManifestUrl);
+
+            byPlatform.TryGetValue(console.Platform, out var platformManifest);
+            platformManifest ??= [];
+
+            var byFilename = rawRoms.ToDictionary(r => r.FileName, r => r, StringComparer.OrdinalIgnoreCase);
+            var usedFilenames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var entry in platformManifest)
+            {
+                var availableVariants = new List<RomVariant>();
+                MameMachine? entryMachine = null;
+
+                foreach (var v in entry.Variants)
+                {
+                    byFilename.TryGetValue(v.ArchiveFile, out var ncRom);
+                    var effectiveCore = !string.IsNullOrWhiteSpace(v.CoreOverride) ? v.CoreOverride : console.EmulatorCore;
+                    var isArcadeCore = IsArcadeCore(effectiveCore);
+
+                    var effectiveRomset = !string.IsNullOrWhiteSpace(v.RomsetName)
+                        ? v.RomsetName.Trim()
+                        : (!string.IsNullOrWhiteSpace(ncRom?.RomsetName) ? ncRom.RomsetName.Trim() : "");
+
+                    var romsetSource = !string.IsNullOrWhiteSpace(v.RomsetName)
+                        ? "manifest"
+                        : (!string.IsNullOrWhiteSpace(ncRom?.RomsetName) ? "scan" : "missing");
+
+                    if (isArcadeCore && string.IsNullOrWhiteSpace(effectiveRomset))
+                    {
+                        effectiveRomset = DeriveRomsetFromArchive(v.ArchiveFile);
+                        romsetSource = "basename-fallback";
+                    }
+
+                    var machine = ResolveMameMachine(v.ArchiveFile, effectiveRomset);
+                    entryMachine ??= machine;
+
+                    var variant = new RomVariant
+                    {
+                        Label = v.Label,
+                        Region = v.Region,
+                        ArchiveFile = v.ArchiveFile,
+                        RomsetName = effectiveRomset,
+                        RomsetMode = string.IsNullOrWhiteSpace(v.RomsetMode)
+                            ? DetermineRomsetMode(effectiveCore, entry.Platform)
+                            : v.RomsetMode,
+                        CoreOverride = v.CoreOverride,
+                        BiosUrl = v.BiosUrl,
+                        RequiredRomsets = v.RequiredRomsets,
+                        Url = ncRom?.Url ?? Nextcloud.BuildPublicFileUrl(v.ArchiveFile),
+                    };
+
+                    if (string.IsNullOrWhiteSpace(variant.ArchiveFile) || string.IsNullOrWhiteSpace(variant.Url))
+                        continue;
+
+                    variant.Files = await BuildEnrichedFilesAsync(
+                        existingFiles: v.Files,
+                        archiveFile: variant.ArchiveFile,
+                        romsetName: variant.RomsetName,
+                        core: effectiveCore,
+                        region: variant.Region,
+                        mameMachine: machine,
+                        runEnrichment: runEnrichment);
+
+                    _latestValidationReport.Add(BuildValidationRow(
+                        game: entry.OfficialName,
+                        platform: entry.Platform,
+                        label: variant.Label,
+                        archiveFile: variant.ArchiveFile,
+                        core: effectiveCore,
+                        romset: effectiveRomset,
+                        romsetSource: romsetSource,
+                        isArcadeCore: isArcadeCore));
+
+                    availableVariants.Add(variant);
+                }
+
+                if (availableVariants.Count == 0) continue;
+
+                foreach (var v in availableVariants)
+                    usedFilenames.Add(v.ArchiveFile);
+
+                merged.Add(new RomManifestEntry
+                {
+                    OfficialName = string.IsNullOrWhiteSpace(entry.OfficialName)
+                        ? (entryMachine?.Description ?? "")
+                        : entry.OfficialName,
+                    Description = string.IsNullOrWhiteSpace(entry.Description)
+                        ? (entryMachine?.Description ?? "")
+                        : entry.Description,
+                    CoverUrl = entry.CoverUrl,
+                    Platform = entry.Platform,
+                    Variants = availableVariants,
+                });
+            }
+
+            foreach (var rom in rawRoms)
+            {
+                if (usedFilenames.Contains(rom.FileName))
+                    continue;
+
+                var machine = ResolveMameMachine(rom.FileName, rom.RomsetName);
+                var isArcadeCore = IsArcadeCore(console.EmulatorCore);
+                var effectiveRomset = string.IsNullOrWhiteSpace(rom.RomsetName)
+                    ? DeriveRomsetFromArchive(rom.FileName)
+                    : rom.RomsetName.Trim();
+                var romsetSource = string.IsNullOrWhiteSpace(rom.RomsetName) ? "basename-fallback" : "scan";
+
+                var enrichedFiles = await BuildEnrichedFilesAsync(
+                    existingFiles: null,
+                    archiveFile: rom.FileName,
+                    romsetName: effectiveRomset,
+                    core: console.EmulatorCore,
+                    region: "",
+                    mameMachine: machine,
+                    runEnrichment: runEnrichment);
+
+                merged.Add(new RomManifestEntry
+                {
+                    OfficialName = machine?.Description ?? rom.Name,
+                    Description = machine?.Description ?? "",
+                    CoverUrl = "",
+                    Platform = console.Platform,
+                    Variants =
+                    [
+                        new RomVariant
+                        {
+                            Label = rom.Name,
+                            Region = "",
+                            ArchiveFile = rom.FileName,
+                            RomsetName = effectiveRomset,
+                            RomsetMode = DetermineRomsetMode(console.EmulatorCore, console.Platform),
+                            CoreOverride = console.EmulatorCore,
+                            Files = enrichedFiles,
+                            RequiredRomsets = [],
+                            Url = rom.Url,
+                        }
+                    ],
+                });
+
+                _latestValidationReport.Add(BuildValidationRow(
+                    game: machine?.Description ?? rom.Name,
+                    platform: console.Platform,
+                    label: rom.Name,
+                    archiveFile: rom.FileName,
+                    core: console.EmulatorCore,
+                    romset: effectiveRomset,
+                    romsetSource: romsetSource,
+                    isArcadeCore: isArcadeCore));
+            }
+        }
+
+        return merged
+            .OrderBy(e => e.Platform, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.OfficialName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private Task RebuildAllCatalogAsync()
+    {
+        return RebuildAllCatalogAsync(runEnrichment: true);
+    }
+
+    private async Task RebuildAllCatalogAsync(bool runEnrichment)
+    {
+        _catalogBusy = true;
+        _catalogError = null;
+        StateHasChanged();
+
+        try
+        {
+            var consoles = await RomRepo.GetConsolesAsync();
+            _latestManifestEntries = await BuildUnifiedManifestSnapshotAsync(consoles, runEnrichment);
+
+            var countByPlatform = _latestManifestEntries
+                .GroupBy(e => e.Platform, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+            _romCounts = consoles.ToDictionary(
+                c => c.Id,
+                c => countByPlatform.GetValueOrDefault(c.Platform),
+                StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _catalogError = ex.Message;
+        }
+        finally
+        {
+            _catalogBusy = false;
+        }
+    }
+
+    private async Task ExportUnifiedManifestAsync()
+    {
+        if (_latestManifestEntries.Count == 0)
+            return;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(_latestManifestEntries, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        });
+
+        var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/emulator-interop.js");
+        await module.InvokeVoidAsync("downloadFile", "manifest-unified.json", json, "application/json");
+    }
+
+    private async Task ExportValidationReportAsync()
+    {
+        if (_latestValidationReport.Count == 0)
+            return;
+
+        var exportObject = new
+        {
+            generatedAtUtc = DateTime.UtcNow,
+            listXmlAvailable = _mameLookupAvailable,
+            totals = new
+            {
+                total = _latestValidationReport.Count,
+                verified = _latestValidationReport.Count(r => r.Status == "verified-listxml"),
+                inferred = _latestValidationReport.Count(r => r.Status == "inferred-basename"),
+                unresolved = _latestValidationReport.Count(r => r.Status == "missing-romset" || r.Status == "romset-not-in-listxml"),
+                listXmlUnavailable = _latestValidationReport.Count(r => r.Status == "unverified-listxml-unavailable"),
+            },
+            rows = _latestValidationReport,
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(exportObject, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        });
+
+        var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/emulator-interop.js");
+        await module.InvokeVoidAsync("downloadFile", "manifest-validation-report.json", json, "application/json");
     }
 }

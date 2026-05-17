@@ -13,11 +13,22 @@
             </div>
         }
         <div class="rom-hover-overlay">
-            <span class="play-icon">▶</span>
+            @if (Rom.Variants.Count > 1)
+            {
+                <span class="play-icon">⚙</span>
+            }
+            else
+            {
+                <span class="play-icon">▶</span>
+            }
         </div>
     </div>
     <div class="rom-meta">
         <span class="rom-name" title="@Rom.Name">@Rom.Name</span>
+        @if (Rom.Variants.Count > 1)
+        {
+            <span class="rom-variants-badge">@Rom.Variants.Count versions</span>
+        }
         @if (Rom.Year > 0)
         {
             <span class="rom-year">@Rom.Year</span>
@@ -25,13 +36,47 @@
     </div>
 </div>
 
+@if (Rom.Variants.Count > 1)
+{
+    <VariantPicker @ref="_picker"
+                   ConsoleId="@ConsoleId"
+                   GameName="@Rom.Name"
+                   Variants="@Rom.Variants"
+                   DefaultCore="@DefaultCore" />
+}
+
 @code {
     [Parameter, EditorRequired] public RomInfo Rom { get; set; } = default!;
     [Parameter, EditorRequired] public string ConsoleId { get; set; } = "";
+    [Parameter] public string DefaultCore { get; set; } = "";
+
+    private VariantPicker? _picker;
 
     private void Play()
     {
-        var encoded = Uri.EscapeDataString(Rom.Url);
-        Nav.NavigateTo($"/play/{ConsoleId}/{encoded}");
+        if (Rom.Variants.Count > 1)
+        {
+            _picker?.Open();
+            return;
+        }
+
+        var url = EmulatorLaunchUrlBuilder.Build(
+            ConsoleId,
+            Rom.Url,
+            DefaultCore,
+            Rom.CoreOverride,
+            Rom.RomsetName,
+            Rom.RomsetMode,
+            Rom.BiosUrl,
+            Rom.RequiredRomsets,
+            BuildReturnUrl());
+
+        Nav.NavigateTo(url);
+    }
+
+    private string BuildReturnUrl()
+    {
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        return string.IsNullOrWhiteSpace(relative) ? "/" : $"/{relative}";
     }
 }

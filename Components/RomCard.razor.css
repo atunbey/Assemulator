@@ -84,3 +84,14 @@
     font-size: 0.65rem;
     color: #888;
 }
+
+.rom-variants-badge {
+    font-size: 0.65rem;
+    background: #2d3a4a;
+    color: #7eaec8;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}

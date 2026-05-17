@@ -1,7 +1,7 @@
 services:
   assemulator:
     build: .
-    image: assemulator:latest
+    image: atunbey/assemulator:latest
     container_name: assemulator
     restart: unless-stopped
     ports:

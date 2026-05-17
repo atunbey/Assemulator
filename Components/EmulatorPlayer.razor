@@ -9,8 +9,28 @@
     [Parameter, EditorRequired] public string Core { get; set; } = "";
     [Parameter, EditorRequired] public string RomUrl { get; set; } = "";
     [Parameter] public string? BiosUrl { get; set; }
+    [Parameter] public string? RomsetName { get; set; }
+    [Parameter] public string[] RequiredRomsets { get; set; } = [];
+    [Parameter] public string? ReturnUrl { get; set; }
 
     private IJSObjectReference? _module;
+    private bool _initialized;
+    private string _lastSignature = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reinitialize when launch-critical values change so switching games does not keep stale EJS globals.
+        if (_module is null || !_initialized)
+            return;
+
+        var signature = BuildSignature();
+        if (signature == _lastSignature)
+            return;
+
+        await _module.InvokeVoidAsync("destroyEmulator");
+        await _module.InvokeVoidAsync("initEmulator", Core, RomUrl, BiosUrl ?? "", RomsetName ?? "", RequiredRomsets, ReturnUrl ?? "");
+        _lastSignature = signature;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -19,15 +39,35 @@
         _module = await JS.InvokeAsync<IJSObjectReference>(
             "import", "./js/emulator-interop.js");
 
-        await _module.InvokeVoidAsync("initEmulator", Core, RomUrl, BiosUrl ?? "");
+        await _module.InvokeVoidAsync("initEmulator", Core, RomUrl, BiosUrl ?? "", RomsetName ?? "", RequiredRomsets, ReturnUrl ?? "");
+        _initialized = true;
+        _lastSignature = BuildSignature();
     }
+
+    private string BuildSignature() =>
+        $"{Core}|{RomUrl}|{BiosUrl ?? ""}|{RomsetName ?? ""}|{string.Join(',', RequiredRomsets)}|{ReturnUrl ?? ""}";
 
     public async ValueTask DisposeAsync()
     {
         if (_module is not null)
         {
-            await _module.InvokeVoidAsync("destroyEmulator");
-            await _module.DisposeAsync();
+            try
+            {
+                await _module.InvokeVoidAsync("destroyEmulator");
+            }
+            catch
+            {
+                // Ignore teardown exceptions during route transitions/unload.
+            }
+
+            try
+            {
+                await _module.DisposeAsync();
+            }
+            catch
+            {
+                // Ignore module disposal exceptions during route transitions/unload.
+            }
         }
     }
 }

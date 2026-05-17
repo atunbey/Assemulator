@@ -1,20 +1,52 @@
 @page "/play/{ConsoleId}/{*RomUrl}"
 @inject IRomRepository RomRepo
+@inject HttpClient Http
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>@(_romName) — Assemulator</PageTitle>
 
 <div class="player-page">
     <div class="player-header">
-        <a href="/console/@ConsoleId" class="back-link">← @(_console?.Name ?? ConsoleId)</a>
+        <a href="@_returnUrl" class="back-link">← @(_console?.Name ?? ConsoleId)</a>
         <span class="playing-title">@_romName</span>
     </div>
 
-    @if (_console is not null)
+@if (_console is not null)
     {
-        <EmulatorPlayer Core="@_console.EmulatorCore"
-                        RomUrl="@System.Net.WebUtility.UrlDecode(RomUrl ?? "")"
-                        BiosUrl="@_console.BiosUrl" />
+        @if (!string.IsNullOrEmpty(RomUrl))
+        {
+            @if (_missingRequiredRomsets.Count > 0)
+            {
+                <div class="player-loading">
+                    <p style="color: #d32f2f; font-weight: bold;">Missing required arcade dependency archives:</p>
+                    <ul>
+                        @foreach (var dep in _missingRequiredRomsets)
+                        {
+                            <li>@dep</li>
+                        }
+                    </ul>
+                    <p>Add these zip files to the same arcade folder as the game archive, then relaunch.</p>
+                </div>
+            }
+            else
+            {
+                <EmulatorPlayer @key="_emulatorInstanceKey"
+                                Core="@_effectiveCore"
+                                RomUrl="@System.Net.WebUtility.UrlDecode(RomUrl ?? "")"
+                                BiosUrl="@(_effectiveBiosUrl)"
+                                RomsetName="@_romsetName"
+                                RequiredRomsets="@_requiredRomsets"
+                                ReturnUrl="@_returnUrl" />
+            }
+        }
+        else
+        {
+            <div class="player-loading">
+                <p style="color: #d32f2f; font-weight: bold;">Error: No ROM file selected.</p>
+                <a href="@_returnUrl" class="back-link">← Back to @(_console?.Name ?? "console")</a>
+            </div>
+        }
     }
     else if (_loading)
     {
@@ -31,6 +63,13 @@
 
     private ConsoleInfo? _console;
     private string _romName = "Loading...";
+    private string? _romsetName;
+    private string _effectiveCore = "";
+    private string _effectiveBiosUrl = "";
+    private string[] _requiredRomsets = [];
+    private List<string> _missingRequiredRomsets = [];
+    private string _returnUrl = "/";
+    private string _emulatorInstanceKey = "";
     private bool _loading = true;
 
     protected override async Task OnParametersSetAsync()
@@ -42,9 +81,102 @@
         if (RomUrl is not null)
         {
             var decoded = System.Net.WebUtility.UrlDecode(RomUrl);
-            _romName = Path.GetFileNameWithoutExtension(decoded);
+            var filename = Path.GetFileName(decoded);
+            _romName = Path.GetFileNameWithoutExtension(filename);
+
+            var uri = new Uri(Nav.Uri);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            _romsetName = query["romset"];
+            _returnUrl = NormalizeReturnUrl(query["return"], ConsoleId);
+            var reqRaw = query["req"];
+            _requiredRomsets = string.IsNullOrWhiteSpace(reqRaw)
+                ? []
+                : reqRaw
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+            // ?core overrides the console default (used by VariantPicker for cross-core variants)
+            var coreOverride = query["core"];
+            _effectiveCore = !string.IsNullOrEmpty(coreOverride)
+                ? coreOverride
+                : _console?.EmulatorCore ?? "";
+
+            // ?bios overrides the console-level BIOS (used for ROMs that need a specific BIOS file)
+            var biosOverride = query["bios"];
+            _effectiveBiosUrl = !string.IsNullOrEmpty(biosOverride)
+                ? biosOverride
+                : _console?.BiosUrl ?? "";
+
+            _missingRequiredRomsets = await FindMissingRequiredRomsetsAsync(decoded, _requiredRomsets);
+
+            _emulatorInstanceKey = $"{ConsoleId}|{_effectiveCore}|{decoded}|{_romsetName}|{_effectiveBiosUrl}|{string.Join(',', _requiredRomsets)}";
+        }
+        else
+        {
+            _effectiveCore = _console?.EmulatorCore ?? "";
+            _requiredRomsets = [];
+            _missingRequiredRomsets = [];
+            _returnUrl = NormalizeReturnUrl(null, ConsoleId);
+            _emulatorInstanceKey = $"{ConsoleId}|{_effectiveCore}|no-rom";
         }
 
         _loading = false;
+    }
+
+    private async Task<List<string>> FindMissingRequiredRomsetsAsync(string romUrl, string[] requiredRomsets)
+    {
+        var isArcadeCore = string.Equals(_effectiveCore, "fbneo", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_effectiveCore, "mame2003", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_effectiveCore, "mame2003_plus", StringComparison.OrdinalIgnoreCase);
+
+        if (!isArcadeCore || requiredRomsets.Length == 0)
+            return [];
+
+        var slash = romUrl.LastIndexOf('/');
+        var baseDir = slash >= 0 ? romUrl[..(slash + 1)] : "";
+        if (string.IsNullOrEmpty(baseDir))
+            return [];
+
+        var missing = new List<string>();
+        foreach (var dep in requiredRomsets)
+        {
+            var name = dep.Trim();
+            if (string.IsNullOrEmpty(name))
+                continue;
+
+            var url = name.StartsWith("/") || name.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || name.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? name
+                : baseDir + Uri.EscapeDataString(name);
+
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Head, url);
+                using var res = await Http.SendAsync(req);
+                if (!res.IsSuccessStatusCode)
+                    missing.Add(name);
+            }
+            catch
+            {
+                missing.Add(name);
+            }
+        }
+
+        return missing;
+    }
+
+    private static string NormalizeReturnUrl(string? returnUrl, string consoleId)
+    {
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            var trimmed = returnUrl.Trim();
+            if (trimmed.StartsWith('/') && !trimmed.StartsWith("//", StringComparison.Ordinal))
+                return trimmed;
+        }
+
+        if (!string.IsNullOrWhiteSpace(consoleId))
+            return $"/console/{consoleId}";
+
+        return "/";
     }
 }

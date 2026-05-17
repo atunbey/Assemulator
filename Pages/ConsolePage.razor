@@ -1,6 +1,8 @@
 @page "/console/{ConsoleId}"
 @inject IRomRepository RomRepo
+@inject INextcloudService Nextcloud
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>@(_console?.Name ?? "Loading...") — Assemulator</PageTitle>
 
@@ -30,6 +32,9 @@ else
 
     <!-- ROM Grid -->
     <div class="rom-section">
+        <div class="rom-section-header">
+            <h2 class="section-title">Games</h2>
+        </div>
         @if (_loading)
         {
             <div class="loading-center">
@@ -38,15 +43,14 @@ else
         }
         else if (!_roms.Any())
         {
-            <p class="no-roms">No ROMs found. Add entries to the manifest for this console.</p>
+            <p class="no-roms">No ROMs found. Check that the Nextcloud folder is accessible and contains ROM files.</p>
         }
         else
         {
-            <h2 class="section-title">Games</h2>
             <div class="rom-grid">
                 @foreach (var rom in _roms)
                 {
-                    <RomCard Rom="rom" ConsoleId="ConsoleId" />
+                    <RomCard Rom="rom" ConsoleId="@ConsoleId" DefaultCore="@(_console?.EmulatorCore ?? "")" />
                 }
             </div>
         }
@@ -59,19 +63,132 @@ else
     private ConsoleInfo? _console;
     private List<RomInfo> _roms = [];
     private bool _loading = true;
+    // Holds the raw Nextcloud scan results so Export Manifest can reference live URLs
+    private List<RomInfo> _rawRoms = [];
 
     protected override async Task OnParametersSetAsync()
     {
+        await LoadCatalogAsync();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
         _loading = true;
         _roms = [];
-        _console = null;
+        _rawRoms = [];
+        StateHasChanged();
 
         var consoles = await RomRepo.GetConsolesAsync();
         _console = consoles.FirstOrDefault(c => c.Id == ConsoleId);
 
-        if (_console is not null && !string.IsNullOrEmpty(_console.RomManifestUrl))
-            _roms = await RomRepo.GetRomsAsync(_console.RomManifestUrl);
+        if (_console is not null)
+        {
+            if (!string.IsNullOrEmpty(_console.NextcloudFolder))
+                _rawRoms = await Nextcloud.ListRomsAsync(_console.NextcloudFolder, _console.RomExtension);
+            else if (!string.IsNullOrEmpty(_console.RomManifestUrl))
+                _rawRoms = await RomRepo.GetRomsAsync(_console.RomManifestUrl);
+
+            _roms = await ApplyManifestAsync(_rawRoms);
+        }
 
         _loading = false;
     }
+
+    /// <summary>
+    /// Loads data/{ConsoleId}/manifest.json and merges it with the raw ROM list.
+    /// Manifest entries group variants under an official name and supply romset/core overrides.
+    /// ROMs not referenced by the manifest are passed through unchanged.
+    /// </summary>
+    private async Task<List<RomInfo>> ApplyManifestAsync(List<RomInfo> rawRoms)
+    {
+        var manifest = await RomRepo.GetManifestAsync(ConsoleId);
+        if (manifest.Count == 0) return rawRoms;
+
+        // Prevent a console page from showing archives that are explicitly assigned
+        // to a different platform in the unified manifest.
+        var currentPlatform = _console?.Platform ?? "";
+        var foreignPlatformArchives = (await RomRepo.GetAllManifestEntriesAsync())
+            .Where(e => !string.Equals(e.Platform, currentPlatform, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(e => e.Variants)
+            .Select(v => v.ArchiveFile)
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Index raw ROMs by filename (case-insensitive) for fast lookup
+        var byFilename = rawRoms.ToDictionary(
+            r => r.FileName,
+            r => r,
+            StringComparer.OrdinalIgnoreCase);
+
+        var result = new List<RomInfo>();
+        var usedFilenames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in manifest)
+        {
+            // Resolve each variant's URL from Nextcloud scan when available,
+            // otherwise fall back to deterministic public-share URL by archive filename.
+            var available = entry.Variants
+                .Select(v =>
+                {
+                    byFilename.TryGetValue(v.ArchiveFile, out var ncRom);
+                    return new RomVariant
+                    {
+                        Label        = v.Label,
+                        Region       = v.Region,
+                        ArchiveFile  = v.ArchiveFile,
+                        RomsetName   = !string.IsNullOrEmpty(v.RomsetName) ? v.RomsetName : (ncRom?.RomsetName ?? ""),
+                        RomsetMode   = string.IsNullOrWhiteSpace(v.RomsetMode) ? "auto" : v.RomsetMode,
+                        CoreOverride = v.CoreOverride,
+                        BiosUrl      = v.BiosUrl,
+                        Files        = v.Files,
+                        RequiredRomsets = v.RequiredRomsets,
+                        Url          = ncRom?.Url ?? Nextcloud.BuildPublicFileUrl(v.ArchiveFile),
+                    };
+                })
+                .Where(v => !string.IsNullOrWhiteSpace(v.ArchiveFile) && !string.IsNullOrWhiteSpace(v.Url))
+                .ToList();
+
+            if (available.Count == 0) continue;
+
+            foreach (var v in available)
+                usedFilenames.Add(v.ArchiveFile);
+
+            // Single variant: no picker needed — promote fields directly
+            if (available.Count == 1)
+            {
+                var v = available[0];
+                result.Add(new RomInfo
+                {
+                    Name         = entry.OfficialName,
+                    Description  = entry.Description,
+                    CoverUrl     = entry.CoverUrl,
+                    FileName     = v.ArchiveFile,
+                    Url          = v.Url,
+                    RomsetName   = v.RomsetName,
+                    RomsetMode   = v.RomsetMode,
+                    CoreOverride = v.CoreOverride,
+                    BiosUrl      = v.BiosUrl,
+                    RequiredRomsets = v.RequiredRomsets,
+                });
+            }
+            else
+            {
+                result.Add(new RomInfo
+                {
+                    Name        = entry.OfficialName,
+                    Description = entry.Description,
+                    CoverUrl    = entry.CoverUrl,
+                    Variants    = available,
+                });
+            }
+        }
+
+        // Pass through any ROMs not claimed by the manifest
+        foreach (var rom in rawRoms)
+            if (!usedFilenames.Contains(rom.FileName) && !foreignPlatformArchives.Contains(rom.FileName))
+                result.Add(rom);
+
+        return result;
+    }
+
 }
