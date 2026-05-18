@@ -3,6 +3,7 @@ packaging_format = 2
 id = "assemulator"
 name = "Assemulator"
 description.en = "Retro game launcher and web emulator frontend"
+description.fr = "Interface web de jeux retro et emulation navigateur"
 
 version = "0.1.0~ynh1"
 
@@ -12,6 +13,10 @@ maintainers = ["atunbey"]
 license = "MIT"
 website = "https://github.com/atunbey/Assemulator"
 code = "https://github.com/atunbey/Assemulator"
+fund = ""
+
+[upstream.demo]
+en = ""
 
 [integration]
 yunohost = ">= 12.0"
@@ -22,6 +27,10 @@ sso = false
 disk = "1G"
 ram.build = "512M"
 ram.runtime = "256M"
+
+[antifeatures]
+
+[dependencies]
 
 [install.domain]
 type = "domain"

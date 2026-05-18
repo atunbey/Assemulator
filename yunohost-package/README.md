@@ -14,10 +14,8 @@ This folder contains a starter package structure for a YunoHost app package repo
 
 ## What you must customize before publishing package
 
-1. In `manifest.toml`, replace all placeholders:
-   - `YOUR_GITHUB_USER`
-   - maintainer email/name
-2. In `conf/docker-compose.yml`, set the final image path/tag if needed.
+1. In `manifest.toml`, set final maintainer metadata and any optional fields for submission quality.
+2. In `scripts/install`, set the final container image tag policy if needed.
 3. Test on a real YunoHost VM/server:
    - install
    - upgrade
@@ -25,6 +23,20 @@ This folder contains a starter package structure for a YunoHost app package repo
    - change_url
    - remove/reinstall
 4. Run YunoHost packaging checks before official catalog submission.
+
+## Quick lifecycle test commands
+
+Run these on your YunoHost server after cloning the package repo (for example in `/root/assemulator_ynh`):
+
+```bash
+yunohost app install /root/assemulator_ynh --debug --args "domain=your.domain.tld&path=/assemulator"
+yunohost app upgrade assemulator -u /root/assemulator_ynh --debug
+yunohost backup create --apps assemulator --name assemulator-test --debug
+yunohost app remove assemulator --debug
+yunohost backup restore assemulator-test --apps assemulator --debug
+yunohost app change-url assemulator -d your.domain.tld -p /retro --debug
+yunohost app remove assemulator --debug
+```
 
 ## Required executable bits
 

@@ -8,10 +8,8 @@ source /usr/share/yunohost/helpers
 ynh_script_progression --message="Removing reverse proxy config..."
 ynh_remove_nginx_config
 
-if [ -f "$final_path/docker-compose.yml" ]; then
-    ynh_script_progression --message="Stopping Assemulator container..."
-    ynh_exec_warn_less docker compose -f "$final_path/docker-compose.yml" down || true
-fi
+ynh_script_progression --message="Stopping Assemulator container..."
+compose_down_if_exists
 
 ynh_script_progression --message="Removing app files..."
 ynh_safe_rm "$final_path"

@@ -7,5 +7,9 @@ source /usr/share/yunohost/helpers
 
 ynh_script_progression --message="Backing up Assemulator data..."
 
-# Includes Docker Compose definition and mounted persistent directories.
-ynh_backup --src_path="$final_path"
+# Backup only the persistent app payload required for restore.
+for entry in docker-compose.yml data roms images bios; do
+	if [ -e "$final_path/$entry" ]; then
+		ynh_backup --src_path="$final_path/$entry"
+	fi
+done
