@@ -8,7 +8,7 @@ source /usr/share/yunohost/helpers
 ynh_script_progression --message="Backing up Assemulator data..."
 
 # Backup only the persistent app payload required for restore.
-for entry in docker-compose.yml data roms images bios; do
+for entry in docker-compose.yml roms images bios; do
 	if [ -e "$final_path/$entry" ]; then
 		ynh_backup --src_path="$final_path/$entry"
 	fi

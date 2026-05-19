@@ -6,7 +6,6 @@ services:
     ports:
       - "127.0.0.1:__PORT__:80"
     volumes:
-      - __APPDIR__/data:/usr/share/nginx/html/data
       - __APPDIR__/roms:/usr/share/nginx/html/roms
       - __APPDIR__/images:/usr/share/nginx/html/images
       - __APPDIR__/bios:/usr/share/nginx/html/bios
