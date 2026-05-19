@@ -537,7 +537,9 @@
                     Description = string.IsNullOrWhiteSpace(entry.Description)
                         ? (entryMachine?.Description ?? "")
                         : entry.Description,
-                    CoverUrl = entry.CoverUrl,
+                    CoverUrl = string.IsNullOrWhiteSpace(entry.CoverUrl)
+                        ? ""
+                        : Nextcloud.BuildPublicFileUrl(entry.CoverUrl.TrimStart('/').Replace("data/thumbnails/", "thumbnails/")),
                     Platform = entry.Platform,
                     Variants = availableVariants,
                 });
