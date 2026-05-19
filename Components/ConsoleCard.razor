@@ -26,5 +26,5 @@
     [Parameter, EditorRequired] public ConsoleInfo Console { get; set; } = default!;
     [Parameter] public int RomCount { get; set; }
 
-    private void Navigate() => Nav.NavigateTo($"/console/{Console.Id}");
+    private void Navigate() => Nav.NavigateTo($"console/{Console.Id}");
 }

@@ -68,7 +68,7 @@
     private string _effectiveBiosUrl = "";
     private string[] _requiredRomsets = [];
     private List<string> _missingRequiredRomsets = [];
-    private string _returnUrl = "/";
+    private string _returnUrl = ".";
     private string _emulatorInstanceKey = "";
     private bool _loading = true;
 
@@ -170,13 +170,13 @@
         if (!string.IsNullOrWhiteSpace(returnUrl))
         {
             var trimmed = returnUrl.Trim();
-            if (trimmed.StartsWith('/') && !trimmed.StartsWith("//", StringComparison.Ordinal))
+            if (!trimmed.StartsWith("//", StringComparison.Ordinal) && !Uri.TryCreate(trimmed, UriKind.Absolute, out _))
                 return trimmed;
         }
 
         if (!string.IsNullOrWhiteSpace(consoleId))
-            return $"/console/{consoleId}";
+            return $"console/{consoleId}";
 
-        return "/";
+        return ".";
     }
 }

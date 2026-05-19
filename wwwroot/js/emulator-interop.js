@@ -10,10 +10,18 @@ function normalizeReturnUrl(returnUrl) {
     if (!returnUrl || typeof returnUrl !== 'string') return '';
 
     const trimmed = returnUrl.trim();
-    if (!trimmed.startsWith('/')) return '';
     if (trimmed.startsWith('//')) return '';
+    if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return '';
 
-    return trimmed;
+    try {
+        const resolved = new URL(trimmed, document.baseURI);
+        const base = new URL(document.baseURI);
+        if (resolved.origin !== base.origin) return '';
+        if (!resolved.pathname.startsWith(base.pathname)) return '';
+        return resolved.toString();
+    } catch (_) {
+        return '';
+    }
 }
 
 function getEjsDataPath() {
@@ -116,7 +124,7 @@ export function initEmulator(core, romUrl, biosUrl, romsetName, requiredRomsets,
             return;
         }
 
-        window.location.assign('/');
+        window.location.assign(new URL('.', document.baseURI).toString());
     };
 
     // Only FBNeo should receive EJS_gameName. For MAME cores this can trigger load-content/menu flows.

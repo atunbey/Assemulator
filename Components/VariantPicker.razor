@@ -59,6 +59,6 @@
     private string BuildReturnUrl()
     {
         var relative = Nav.ToBaseRelativePath(Nav.Uri);
-        return string.IsNullOrWhiteSpace(relative) ? "/" : $"/{relative}";
+        return relative ?? "";
     }
 }

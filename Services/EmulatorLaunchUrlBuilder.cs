@@ -35,7 +35,7 @@ public static class EmulatorLaunchUrlBuilder
         if (!string.IsNullOrWhiteSpace(normalizedReturn))
             query.Add($"return={Uri.EscapeDataString(normalizedReturn)}");
 
-        var url = $"/play/{consoleId}/{encodedRomUrl}";
+        var url = $"play/{consoleId}/{encodedRomUrl}";
         if (query.Count > 0)
             url += "?" + string.Join('&', query);
 
@@ -81,9 +81,9 @@ public static class EmulatorLaunchUrlBuilder
         var trimmed = returnTo.Trim();
 
         // Prevent open redirects and keep return navigation inside this app.
-        if (!trimmed.StartsWith('/'))
-            return "";
         if (trimmed.StartsWith("//", StringComparison.Ordinal))
+            return "";
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
             return "";
 
         return trimmed;
