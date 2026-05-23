@@ -1,0 +1,7 @@
+{
+  "Nextcloud": {
+    "BaseUrl": "${NEXTCLOUD_BASE_URL}",
+    "ShareToken": "${NEXTCLOUD_SHARE_TOKEN}",
+    "MetadataPath": "${NEXTCLOUD_METADATA_PATH}"
+  }
+}

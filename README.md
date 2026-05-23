@@ -12,6 +12,32 @@ App URL:
 
 - http://localhost:8088
 
+## Environment-safe Nextcloud configuration
+
+The app uses a runtime file (`wwwroot/runtime-config.json`) so environment-specific
+Nextcloud values can change without rebuilding the Blazor app.
+
+Contract used by the frontend:
+
+- `Nextcloud:BaseUrl` -> relative `nc-api`
+- `Nextcloud:ShareToken` -> public share token
+- `Nextcloud:MetadataPath` -> `MetaData`
+
+Docker renders `runtime-config.json` from `runtime-config.template.json` at startup
+using these environment variables:
+
+- `NEXTCLOUD_BASE_URL`
+- `NEXTCLOUD_SHARE_TOKEN`
+- `NEXTCLOUD_METADATA_PATH`
+
+This keeps local Docker and production aligned on the same URL pattern:
+
+- File download: `GET <base>/public.php/dav/files/<token>/MetaData/consoles.json`
+- Folder listing: `PROPFIND <base>/public.php/dav/files/<token>/MetaData/` with `Depth: 1`
+
+For YunoHost production, ensure `__PATH__/nc-api/` in `yunohost-package/conf/nginx.conf`
+proxies to `https://tools.kushkurriculum.org/nextcloud/`.
+
 ## Publish container image to GitHub Container Registry (GHCR)
 
 This repository includes a GitHub Actions workflow at:

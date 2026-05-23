@@ -1,0 +1,7 @@
+{
+  "Nextcloud": {
+    "BaseUrl": "nc-api",
+    "ShareToken": "jbXHPXxAxzj8ATB",
+    "MetadataPath": "MetaData"
+  }
+}
