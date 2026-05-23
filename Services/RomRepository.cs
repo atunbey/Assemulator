@@ -1,27 +1,30 @@
 using System.Net.Http.Json;
 using Assemulator.Models;
+using Microsoft.Extensions.Configuration;
 
 namespace Assemulator.Services;
 
 public class RomRepository : IRomRepository
 {
     private readonly HttpClient _http;
+    private readonly string _metadataBaseUrl;
     private List<ConsoleInfo>? _consolesCache;
 
-    public RomRepository(HttpClient http)
+    public RomRepository(HttpClient http, IConfiguration config)
     {
         _http = http;
+        var baseUrl = (config["Nextcloud:BaseUrl"] ?? "https://tools.kushkurriculum.org/nextcloud").TrimEnd('/');
+        var shareToken = config["Nextcloud:ShareToken"] ?? "";
+        var metadataPath = (config["Nextcloud:MetadataPath"] ?? "MetaData").Trim('/');
+        _metadataBaseUrl = $"{baseUrl}/public.php/dav/files/{shareToken}/{metadataPath}";
     }
-
 
     public async Task<List<ConsoleInfo>> GetConsolesAsync()
     {
         if (_consolesCache is not null)
             return _consolesCache;
 
-        // Load consoles.json from Nextcloud /MetaData
-        var nextcloudUrl = $"/assemulator/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/consoles.json";
-        var result = await _http.GetFromJsonAsync<List<ConsoleInfo>>(nextcloudUrl);
+        var result = await _http.GetFromJsonAsync<List<ConsoleInfo>>($"{_metadataBaseUrl}/consoles.json");
         _consolesCache = result ?? [];
         return _consolesCache;
     }
@@ -49,9 +52,7 @@ public class RomRepository : IRomRepository
     {
         try
         {
-            // Load manifest.json from Nextcloud /MetaData
-            var nextcloudUrl = $"/assemulator/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/manifest.json";
-            var result = await _http.GetFromJsonAsync<List<RomManifestEntry>>(nextcloudUrl);
+            var result = await _http.GetFromJsonAsync<List<RomManifestEntry>>($"{_metadataBaseUrl}/manifest.json");
             return result ?? [];
         }
         catch

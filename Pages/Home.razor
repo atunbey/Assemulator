@@ -155,7 +155,7 @@
         _mameLookup = new Dictionary<string, MameMachine>(StringComparer.OrdinalIgnoreCase);
         _mameLookupAvailable = false;
 
-        var sources = new[] { Nextcloud.BuildPublicFileUrl("mame-listxml.xml"), MameListXmlFallbackPath };
+        var sources = new[] { Nextcloud.BuildPublicFileUrl("MetaData/mame-listxml.xml"), MameListXmlFallbackPath };
         foreach (var source in sources)
         {
             try
@@ -539,7 +539,7 @@
                         : entry.Description,
                     CoverUrl = string.IsNullOrWhiteSpace(entry.CoverUrl)
                         ? ""
-                        : Nextcloud.BuildPublicFileUrl(entry.CoverUrl.TrimStart('/').Replace("data/thumbnails/", "thumbnails/")),
+                        : Nextcloud.BuildPublicFileUrl("MetaData/" + entry.CoverUrl.TrimStart('/').Replace("data/thumbnails/", "thumbnails/")),
                     Platform = entry.Platform,
                     Variants = availableVariants,
                 });

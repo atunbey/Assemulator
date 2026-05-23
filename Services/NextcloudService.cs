@@ -18,15 +18,13 @@ public class NextcloudService : INextcloudService
         _shareToken = config["Nextcloud:ShareToken"] ?? "";
     }
 
-    public string BuildPublicFileUrl(string filename)
+    public string BuildPublicFileUrl(string filePath)
     {
-        // Always serve from /MetaData for all metadata assets (Game is share root)
-        var safeFilename = Uri.EscapeDataString(
-            filename.TrimStart('/')
-                .Replace("data/", "MetaData/")
-                .Replace("thumbnails/", "MetaData/thumbnails/")
-        );
-        return $"{_baseUrl}/public.php/dav/files/{_shareToken}/{safeFilename}";
+        // Decode first (in case input is already partially URL-encoded), then encode each
+        // path segment individually so that '/' separators are preserved.
+        var decoded = Uri.UnescapeDataString(filePath.TrimStart('/'));
+        var encodedPath = string.Join("/", decoded.Split('/').Select(Uri.EscapeDataString));
+        return $"{_baseUrl}/public.php/dav/files/{_shareToken}/{encodedPath}";
     }
 
     public async Task<List<RomInfo>> ListRomsAsync(string folder, string extension)
