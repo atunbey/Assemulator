@@ -13,12 +13,15 @@ public class RomRepository : IRomRepository
         _http = http;
     }
 
+
     public async Task<List<ConsoleInfo>> GetConsolesAsync()
     {
         if (_consolesCache is not null)
             return _consolesCache;
 
-        var result = await _http.GetFromJsonAsync<List<ConsoleInfo>>("data/consoles.json");
+        // Load consoles.json from Nextcloud /MetaData
+        var nextcloudUrl = $"/assemulator/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/consoles.json";
+        var result = await _http.GetFromJsonAsync<List<ConsoleInfo>>(nextcloudUrl);
         _consolesCache = result ?? [];
         return _consolesCache;
     }
@@ -46,7 +49,9 @@ public class RomRepository : IRomRepository
     {
         try
         {
-            var result = await _http.GetFromJsonAsync<List<RomManifestEntry>>("data/manifest.json");
+            // Load manifest.json from Nextcloud /MetaData
+            var nextcloudUrl = $"/assemulator/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/manifest.json";
+            var result = await _http.GetFromJsonAsync<List<RomManifestEntry>>(nextcloudUrl);
             return result ?? [];
         }
         catch

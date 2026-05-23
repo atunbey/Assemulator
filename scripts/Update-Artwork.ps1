@@ -44,8 +44,8 @@
 #>
 param(
     [string]$DataPath         = '',
-    [string]$NextcloudDavBase = 'https://tools.kushkurriculum.org/nextcloud/public.php/dav/files/jbXHPXxAxzj8ATB',
-    [string]$NcProxyBase      = '/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB',
+    [string]$NextcloudDavBase = 'https://tools.kushkurriculum.org/nextcloud/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData',
+    [string]$NcProxyBase      = '/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData',
     [switch]$Force
 )
 
