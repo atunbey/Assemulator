@@ -11,12 +11,18 @@ domain=$YNH_APP_ARG_DOMAIN
 path_url=$YNH_APP_ARG_PATH
 app_port=$(ynh_find_port --port=18088)
 image="ghcr.io/atunbey/assemulator:latest"
+nextcloud_base_url="${YNH_APP_ARG_NEXTCLOUD_BASE_URL:-/nextcloud}"
+nextcloud_share_token="${YNH_APP_ARG_NEXTCLOUD_SHARE_TOKEN:-jbXHPXxAxzj8ATB}"
+nextcloud_metadata_path="${YNH_APP_ARG_NEXTCLOUD_METADATA_PATH:-MetaData}"
 
 ynh_script_progression --message="Saving settings..."
 ynh_app_setting_set --app=$app --key=domain --value=$domain
 ynh_app_setting_set --app=$app --key=path --value=$path_url
 ynh_app_setting_set --app=$app --key=port --value=$app_port
 ynh_app_setting_set --app=$app --key=image --value=$image
+ynh_app_setting_set --app=$app --key=nextcloud_base_url --value=$nextcloud_base_url
+ynh_app_setting_set --app=$app --key=nextcloud_share_token --value=$nextcloud_share_token
+ynh_app_setting_set --app=$app --key=nextcloud_metadata_path --value=$nextcloud_metadata_path
 
 ynh_script_progression --message="Ensuring Docker and Compose are available..."
 ynh_exec_warn_less ynh_install_app_dependencies docker.io docker-compose-plugin
@@ -26,7 +32,7 @@ ynh_app_setting_set --app=$app --key=final_path --value=$final_path
 ynh_safe_rm "$final_path"
 mkdir -p "$final_path" "$final_path/roms" "$final_path/images" "$final_path/bios"
 
-render_compose_file "$app_port" "$image"
+render_compose_file "$app_port" "$image" "$nextcloud_base_url" "$nextcloud_share_token" "$nextcloud_metadata_path"
 
 ynh_script_progression --message="Configuring reverse proxy..."
 ynh_add_nginx_config

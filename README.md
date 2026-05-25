@@ -49,6 +49,9 @@ Examples:
 For YunoHost production, ensure `__PATH__/nc-api/` in `yunohost-package/conf/nginx.conf`
 proxies to `https://tools.kushkurriculum.org/nextcloud/`.
 
+If that path-scoped proxy is not active yet, production can still work by setting
+`NEXTCLOUD_BASE_URL=/nextcloud` so runtime-config points at the host-level Nextcloud path.
+
 ## Publish container image to GitHub Container Registry (GHCR)
 
 This repository includes a GitHub Actions workflow at:

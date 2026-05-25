@@ -39,4 +39,16 @@ type = "domain"
 type = "path"
 default = "/assemulator"
 
+[install.nextcloud_base_url]
+type = "string"
+default = "/nextcloud"
+
+[install.nextcloud_share_token]
+type = "string"
+default = "jbXHPXxAxzj8ATB"
+
+[install.nextcloud_metadata_path]
+type = "string"
+default = "MetaData"
+
 [resources]

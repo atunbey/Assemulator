@@ -15,6 +15,9 @@ get_setting_or_die() {
 render_compose_file() {
 	local app_port=$1
 	local image=$2
+	local nextcloud_base_url=$3
+	local nextcloud_share_token=$4
+	local nextcloud_metadata_path=$5
 
 	mkdir -p "$final_path"
 	cp ../conf/docker-compose.yml "$compose_file"
@@ -22,6 +25,9 @@ render_compose_file() {
 	ynh_replace_string --match_string="__PORT__" --replace_string="$app_port" --target_file="$compose_file"
 	ynh_replace_string --match_string="__APPDIR__" --replace_string="$final_path" --target_file="$compose_file"
 	ynh_replace_string --match_string="__IMAGE__" --replace_string="$image" --target_file="$compose_file"
+	ynh_replace_string --match_string="__NEXTCLOUD_BASE_URL__" --replace_string="$nextcloud_base_url" --target_file="$compose_file"
+	ynh_replace_string --match_string="__NEXTCLOUD_SHARE_TOKEN__" --replace_string="$nextcloud_share_token" --target_file="$compose_file"
+	ynh_replace_string --match_string="__NEXTCLOUD_METADATA_PATH__" --replace_string="$nextcloud_metadata_path" --target_file="$compose_file"
 }
 
 compose_pull_up() {

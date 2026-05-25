@@ -161,7 +161,7 @@ else
                 {
                     Name         = entry.OfficialName,
                     Description  = entry.Description,
-                    CoverUrl     = entry.CoverUrl,
+                    CoverUrl     = ResolveCoverUrl(entry.CoverUrl),
                     FileName     = v.ArchiveFile,
                     Url          = v.Url,
                     RomsetName   = v.RomsetName,
@@ -177,7 +177,7 @@ else
                 {
                     Name        = entry.OfficialName,
                     Description = entry.Description,
-                    CoverUrl    = entry.CoverUrl,
+                    CoverUrl    = ResolveCoverUrl(entry.CoverUrl),
                     Variants    = available,
                 });
             }
@@ -189,6 +189,44 @@ else
                 result.Add(rom);
 
         return result;
+    }
+
+    private string ResolveCoverUrl(string rawCoverUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawCoverUrl))
+            return "";
+
+        var trimmed = rawCoverUrl.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+            return trimmed;
+
+        var normalized = trimmed.TrimStart('/');
+
+        // Legacy local path from earlier manifests.
+        if (normalized.StartsWith("data/thumbnails/", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized["data/".Length..];
+
+        // Legacy absolute DAV URLs pinned to a specific base path.
+        var marker = "MetaData/";
+        var metadataIdx = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (metadataIdx >= 0)
+        {
+            var metadataRelative = normalized[(metadataIdx + marker.Length)..];
+            return Nextcloud.BuildMetadataFileUrl(metadataRelative);
+        }
+
+        // New manifest format: environment-agnostic metadata relative path.
+        if (normalized.StartsWith("thumbnails/", StringComparison.OrdinalIgnoreCase))
+            return Nextcloud.BuildMetadataFileUrl(normalized);
+
+        // Keep app-static paths untouched.
+        if (normalized.StartsWith("images/", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("css/", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("js/", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("data/", StringComparison.OrdinalIgnoreCase))
+            return "/" + normalized;
+
+        return Nextcloud.BuildMetadataFileUrl(normalized);
     }
 
 }

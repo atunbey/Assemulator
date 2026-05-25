@@ -17,7 +17,7 @@
                       which is served as a static file by nginx inside the container.
 
     The coverUrl written to the manifest will be:
-      Nextcloud : /nc-api/public.php/dav/files/<token>/thumbnails/<systemId>/<file>.png
+            Nextcloud : thumbnails/<systemId>/<file>.png
       Local     : /data/thumbnails/<systemId>/<file>.png
 
     Games whose coverUrl already points to a stored path are skipped unless -Force
@@ -292,7 +292,7 @@ function Save-ToNextcloud([string]$SystemId, [string]$Filename, [byte[]]$Data) {
             Write-Host '  Nextcloud is writable ? using Nextcloud storage for all art.' -ForegroundColor Green
             $script:NcWritable = $true
         }
-        return "$NcProxyBase/$MetadataPath/thumbnails/$SystemId/$enc"
+        return "thumbnails/$SystemId/$enc"
     } else {
         if ($null -eq $script:NcWritable) {
             Write-Warning '  Nextcloud PUT failed (share may be read-only). Falling back to local wwwroot storage.'
@@ -377,7 +377,7 @@ function Update-UnifiedManifest($Manifest, [hashtable]$ConsoleLookup) {
         $filename = $match + '.png'
 
         if ($DryRun) {
-            $predictedUrl = "$NcProxyBase/$MetadataPath/thumbnails/$SystemId/$([Uri]::EscapeUriString($filename))"
+            $predictedUrl = "thumbnails/$SystemId/$([Uri]::EscapeUriString($filename))"
             Write-Host "        [DRY-RUN] would set coverUrl = $predictedUrl" -ForegroundColor Cyan
             $changed = $true
             continue

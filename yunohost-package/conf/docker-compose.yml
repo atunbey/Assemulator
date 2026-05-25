@@ -3,6 +3,10 @@ services:
     image: __IMAGE__
     container_name: __APP__
     restart: unless-stopped
+    environment:
+      NEXTCLOUD_BASE_URL: __NEXTCLOUD_BASE_URL__
+      NEXTCLOUD_SHARE_TOKEN: __NEXTCLOUD_SHARE_TOKEN__
+      NEXTCLOUD_METADATA_PATH: __NEXTCLOUD_METADATA_PATH__
     ports:
       - "127.0.0.1:__PORT__:80"
     volumes:
