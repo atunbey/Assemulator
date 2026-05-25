@@ -35,18 +35,26 @@
 .PARAMETER Force
     Re-download and overwrite even for games that already have a stored coverUrl.
 
+.PARAMETER DryRun
+    Validate listing/reading/matching only. Does not write thumbnails or manifest anywhere.
+
 .EXAMPLE
     cd D:\source\repos\Assemulator
     .\scripts\Update-Artwork.ps1
 
 .EXAMPLE
     .\scripts\Update-Artwork.ps1 -Force
+
+.EXAMPLE
+    .\scripts\Update-Artwork.ps1 -DryRun
 #>
 param(
     [string]$DataPath         = '',
-    [string]$NextcloudDavBase = 'https://tools.kushkurriculum.org/nextcloud/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData',
-    [string]$NcProxyBase      = '/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData',
-    [switch]$Force
+    [string]$NextcloudDavBase = 'https://tools.kushkurriculum.org/nextcloud/public.php/dav/files/jbXHPXxAxzj8ATB',
+    [string]$NcProxyBase      = '/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB',
+    [string]$MetadataPath     = 'MetaData',
+    [switch]$Force,
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Continue'
@@ -57,6 +65,9 @@ if (-not $DataPath) {
     $DataPath = Join-Path $base 'wwwroot\data'
 }
 $DataPath = (Resolve-Path $DataPath).Path
+$NextcloudDavBase = $NextcloudDavBase.TrimEnd('/')
+$NcProxyBase = $NcProxyBase.TrimEnd('/')
+$MetadataPath = $MetadataPath.Trim('/')
 
 # ?? Lookup tables ??????????????????????????????????????????????????????????????
 
@@ -170,11 +181,11 @@ function Invoke-DavMkCol([string]$Url) {
 }
 
 # ?? Helper: WebDAV PUT ????????????????????????????????????????????????????????
-function Invoke-DavPut([string]$Url, [byte[]]$Data) {
+function Invoke-DavPut([string]$Url, [byte[]]$Data, [string]$ContentType = 'application/octet-stream') {
     try {
         $req = [System.Net.WebRequest]::Create($Url)
         $req.Method = 'PUT'
-        $req.ContentType = 'image/png'
+        $req.ContentType = $ContentType
         $req.ContentLength = $Data.Length
         $s = $req.GetRequestStream()
         $s.Write($Data, 0, $Data.Length)
@@ -187,23 +198,101 @@ function Invoke-DavPut([string]$Url, [byte[]]$Data) {
     }
 }
 
+function Invoke-DavList([string]$Url) {
+    try {
+        $req = [System.Net.HttpWebRequest]::Create($Url)
+        $req.Method = 'PROPFIND'
+        $req.Headers.Add('Depth', '1')
+        $req.ContentType = 'application/xml; charset=utf-8'
+                $body = @"
+<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:displayname/>
+    <d:resourcetype/>
+  </d:prop>
+</d:propfind>
+"@
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+        $req.ContentLength = $bytes.Length
+        $stream = $req.GetRequestStream()
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Close()
+
+        $resp = $req.GetResponse()
+        $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+        $xml = $reader.ReadToEnd()
+        $reader.Close()
+        $resp.Close()
+        return $xml
+    } catch {
+        return $null
+    }
+}
+
+function Get-DirectoryDisplayNames([string]$Xml) {
+    if ([string]::IsNullOrWhiteSpace($Xml)) { return @() }
+
+    try {
+        [xml]$doc = $Xml
+        $names = @()
+        $responses = @($doc.SelectNodes("//*[local-name()='response']"))
+        foreach ($r in $responses) {
+            $nameNode = $r.SelectSingleNode(".//*[local-name()='displayname']")
+            if ($null -eq $nameNode) { continue }
+            $name = [string]$nameNode.InnerText
+            if (-not [string]::IsNullOrWhiteSpace($name)) {
+                $names += $name.Trim()
+            }
+        }
+        return @($names | Select-Object -Unique)
+    } catch {
+        return @()
+    }
+}
+
+function Get-MetadataFileText([string]$FileName) {
+    $url = "$NextcloudDavBase/$MetadataPath/$FileName"
+    try {
+        $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
+        $text = [string]$resp.Content
+        if ($text.Length -gt 0 -and [int][char]$text[0] -eq 65279) {
+            $text = $text.Substring(1)
+        }
+        return $text
+    } catch {
+        return $null
+    }
+}
+
+function Set-MetadataFileText([string]$FileName, [string]$Content) {
+    $dirUrl = "$NextcloudDavBase/$MetadataPath"
+    Invoke-DavMkCol $dirUrl
+
+    $fileUrl = "$dirUrl/$([Uri]::EscapeUriString($FileName))"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Content)
+    return (Invoke-DavPut $fileUrl $bytes 'application/json; charset=utf-8')
+}
+
 # ?? Store on Nextcloud; returns coverUrl string or $null on failure ????????????
 function Save-ToNextcloud([string]$SystemId, [string]$Filename, [byte[]]$Data) {
+    if ($DryRun) { return $null }
     if ($script:NcWritable -eq $false) { return $null }
 
-    # Ensure /thumbnails/ and /thumbnails/<system>/ collections exist
-    Invoke-DavMkCol "$NextcloudDavBase/thumbnails"
-    Invoke-DavMkCol "$NextcloudDavBase/thumbnails/$SystemId"
+    # Ensure /MetaData/thumbnails/ and /MetaData/thumbnails/<system>/ collections exist
+    Invoke-DavMkCol "$NextcloudDavBase/$MetadataPath"
+    Invoke-DavMkCol "$NextcloudDavBase/$MetadataPath/thumbnails"
+    Invoke-DavMkCol "$NextcloudDavBase/$MetadataPath/thumbnails/$SystemId"
 
     $enc = [Uri]::EscapeUriString($Filename)
-    $putUrl = "$NextcloudDavBase/thumbnails/$SystemId/$enc"
+    $putUrl = "$NextcloudDavBase/$MetadataPath/thumbnails/$SystemId/$enc"
 
-    if (Invoke-DavPut $putUrl $Data) {
+    if (Invoke-DavPut $putUrl $Data 'image/png') {
         if ($null -eq $script:NcWritable) {
             Write-Host '  Nextcloud is writable ? using Nextcloud storage for all art.' -ForegroundColor Green
             $script:NcWritable = $true
         }
-        return "$NcProxyBase/thumbnails/$SystemId/$enc"
+        return "$NcProxyBase/$MetadataPath/thumbnails/$SystemId/$enc"
     } else {
         if ($null -eq $script:NcWritable) {
             Write-Warning '  Nextcloud PUT failed (share may be read-only). Falling back to local wwwroot storage.'
@@ -215,6 +304,11 @@ function Save-ToNextcloud([string]$SystemId, [string]$Filename, [byte[]]$Data) {
 
 # ?? Store locally under wwwroot/data/thumbnails/ ?????????????????????????????
 function Save-ToLocal([string]$SystemId, [string]$Filename, [byte[]]$Data) {
+    if ($DryRun) {
+        $safeFilename = $Filename -replace '[(),]', '' -replace '\s{2,}', ' ' -replace '^\s+|\s+$', ''
+        return "/data/thumbnails/$SystemId/$([Uri]::EscapeUriString($safeFilename))"
+    }
+
     $dir = Join-Path $DataPath "thumbnails\$SystemId"
     if (-not (Test-Path $dir)) {
         New-Item $dir -ItemType Directory -Force | Out-Null
@@ -227,10 +321,10 @@ function Save-ToLocal([string]$SystemId, [string]$Filename, [byte[]]$Data) {
     return "/data/thumbnails/$SystemId/$([Uri]::EscapeUriString($safeFilename))"
 }
 
-# -- Process the unified data/manifest.json ----------------------------------
+# -- Process manifest object --------------------------------------------------
 # $ConsoleLookup: platform label -> @{ Id = 'arcade'; Core = 'fbneo' }
-function Update-UnifiedManifest([string]$ManifestPath, [hashtable]$ConsoleLookup) {
-    $manifest = Get-Content $ManifestPath -Encoding UTF8 -Raw | ConvertFrom-Json
+function Update-UnifiedManifest($Manifest, [hashtable]$ConsoleLookup) {
+    $manifest = $Manifest
     $changed  = $false
 
     foreach ($game in $manifest) {
@@ -280,11 +374,18 @@ function Update-UnifiedManifest([string]$ManifestPath, [hashtable]$ConsoleLookup
 
         # Download PNG from the cover-art CDN
         $matchFile = $match + '.png'
+        $filename = $match + '.png'
+
+        if ($DryRun) {
+            $predictedUrl = "$NcProxyBase/$MetadataPath/thumbnails/$SystemId/$([Uri]::EscapeUriString($filename))"
+            Write-Host "        [DRY-RUN] would set coverUrl = $predictedUrl" -ForegroundColor Cyan
+            $changed = $true
+            continue
+        }
+
         $cdnUrl = "https://thumbnails.libretro.com/$([Uri]::EscapeUriString($systemFolder))/Named_Boxarts/$([Uri]::EscapeUriString($matchFile))"
         $pngBytes = Get-PngBytes $cdnUrl
         if (-not $pngBytes) { continue }
-
-        $filename = $match + '.png'
 
         # Try Nextcloud first, fall back to local
         $coverUrl = Save-ToNextcloud $systemId $filename $pngBytes
@@ -297,9 +398,9 @@ function Update-UnifiedManifest([string]$ManifestPath, [hashtable]$ConsoleLookup
         Write-Host "        coverUrl = $coverUrl" -ForegroundColor Cyan
     }
 
-    if ($changed) {
-        $manifest | ConvertTo-Json -Depth 10 | Set-Content $ManifestPath -Encoding UTF8
-        Write-Host "  Saved $ManifestPath" -ForegroundColor White
+    return [pscustomobject]@{
+        Manifest = $manifest
+        Changed = $changed
     }
 }
 
@@ -308,18 +409,57 @@ Write-Host ''
 Write-Host '=== Assemulator Artwork Enrichment ===' -ForegroundColor Magenta
 Write-Host "DataPath : $DataPath"
 Write-Host "Nextcloud: $NextcloudDavBase"
+Write-Host "MetaData : $MetadataPath"
 Write-Host "Force    : $Force"
+Write-Host "DryRun   : $DryRun"
 Write-Host ''
 
 $unifiedManifest = Join-Path $DataPath 'manifest.json'
-if (-not (Test-Path $unifiedManifest)) {
-    Write-Host "ERROR: $unifiedManifest not found." -ForegroundColor Red
-    exit 1
+
+# Verify directory listing from share root (Game) and MetaData.
+$rootListingXml = Invoke-DavList "$NextcloudDavBase/"
+$rootNames = Get-DirectoryDisplayNames $rootListingXml
+if ($rootNames.Count -gt 0) {
+    Write-Host "Root listing (first 20): $((($rootNames | Select-Object -First 20) -join ', '))" -ForegroundColor DarkCyan
+} else {
+    Write-Warning "Could not list Nextcloud share root via PROPFIND."
 }
 
+$metaListingXml = Invoke-DavList "$NextcloudDavBase/$MetadataPath/"
+$metaNames = Get-DirectoryDisplayNames $metaListingXml
+if ($metaNames.Count -gt 0) {
+    Write-Host "MetaData listing (first 20): $((($metaNames | Select-Object -First 20) -join ', '))" -ForegroundColor DarkCyan
+} else {
+    Write-Warning "Could not list Nextcloud MetaData via PROPFIND."
+}
+
+# Read consoles.json and manifest.json from Nextcloud first, local fallback second.
+$consolesText = Get-MetadataFileText 'consoles.json'
+if ([string]::IsNullOrWhiteSpace($consolesText)) {
+    $consolesPath = Join-Path $DataPath 'consoles.json'
+    if (Test-Path $consolesPath) {
+        $consolesText = Get-Content $consolesPath -Encoding UTF8 -Raw
+        Write-Warning 'Using local consoles.json fallback.'
+    } else {
+        Write-Host "ERROR: Could not read consoles.json from Nextcloud or local path '$consolesPath'." -ForegroundColor Red
+        exit 1
+    }
+}
+$consoles = $consolesText | ConvertFrom-Json
+
+$manifestText = Get-MetadataFileText 'manifest.json'
+if ([string]::IsNullOrWhiteSpace($manifestText)) {
+    if (Test-Path $unifiedManifest) {
+        $manifestText = Get-Content $unifiedManifest -Encoding UTF8 -Raw
+        Write-Warning 'Using local manifest.json fallback.'
+    } else {
+        Write-Host "ERROR: Could not read manifest.json from Nextcloud or local path '$unifiedManifest'." -ForegroundColor Red
+        exit 1
+    }
+}
+$manifest = $manifestText | ConvertFrom-Json
+
 # Build platform -> {Id, Core} lookup from consoles.json
-$consolesPath = Join-Path $DataPath 'consoles.json'
-$consoles     = Get-Content $consolesPath -Encoding UTF8 -Raw | ConvertFrom-Json
 $ConsoleLookup = @{}
 foreach ($c in $consoles) {
     if ($c.platform) { $ConsoleLookup[$c.platform] = @{ Id = $c.id; Core = $c.emulatorCore } }
@@ -330,7 +470,25 @@ $ConsoleLookup.GetEnumerator() | Sort-Object Key | ForEach-Object {
 }
 Write-Host ''
 
-Update-UnifiedManifest $unifiedManifest $ConsoleLookup
+$result = Update-UnifiedManifest $manifest $ConsoleLookup
+
+if ($DryRun) {
+    if ($result.Changed) {
+        Write-Host '  [DRY-RUN] Validation found entries that would be updated.' -ForegroundColor White
+    } else {
+        Write-Host '  [DRY-RUN] No changes would be made.' -ForegroundColor White
+    }
+}
+elseif ($result.Changed) {
+    $outputJson = $result.Manifest | ConvertTo-Json -Depth 10
+    $savedToNextcloud = Set-MetadataFileText 'manifest.json' $outputJson
+    if ($savedToNextcloud) {
+        Write-Host '  Saved MetaData/manifest.json to Nextcloud.' -ForegroundColor White
+    } else {
+        $outputJson | Set-Content $unifiedManifest -Encoding UTF8
+        Write-Warning "Saved local fallback file: $unifiedManifest"
+    }
+}
 
 Write-Host ''
 Write-Host 'Done.' -ForegroundColor Green

@@ -1,0 +1,5 @@
+﻿bind|D:\source\repos\Assemulator\wwwroot\bios|/usr/share/nginx/html/bios
+bind|D:\source\repos\Assemulator\wwwroot\data|/usr/share/nginx/html/data
+bind|D:\source\repos\Assemulator\wwwroot\images|/usr/share/nginx/html/images
+bind|D:\source\repos\Assemulator\wwwroot\roms|/usr/share/nginx/html/roms
+

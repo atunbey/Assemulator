@@ -1,7 +1,7 @@
 param(
     [string]$ManifestPath = "/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/manifest.json",
     [string]$ArcadeManifestPath = "/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/arcade-manifest.json",
-    [string]$RomBaseUrl = "/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData",
+    [string]$RomBaseUrl = "/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB",
     [string]$MameListXmlPath = "/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/mame-listxml.xml",
     [string]$MameListXmlUrl = "/nc-api/public.php/dav/files/jbXHPXxAxzj8ATB/MetaData/mame-listxml.xml",
     [switch]$UpdateArcadeManifest

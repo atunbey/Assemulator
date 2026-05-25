@@ -1,4 +1,3 @@
-using System.Text;
 using System.Xml.Linq;
 using Assemulator.Models;
 using Microsoft.Extensions.Configuration;
@@ -10,86 +9,152 @@ public class NextcloudService : INextcloudService
     private readonly HttpClient _http;
     private readonly string _baseUrl;
     private readonly string _shareToken;
+    private readonly string _metadataPath;
 
     public NextcloudService(HttpClient http, IConfiguration config)
     {
         _http = http;
         _baseUrl = (config["Nextcloud:BaseUrl"] ?? "https://tools.kushkurriculum.org/nextcloud").TrimEnd('/');
         _shareToken = config["Nextcloud:ShareToken"] ?? "";
+        _metadataPath = (config["Nextcloud:MetadataPath"] ?? "MetaData").Trim('/');
     }
 
-    public string BuildPublicFileUrl(string filePath)
+    public string BuildPublicFileUrl(string relativePath)
     {
-        // Decode first (in case input is already partially URL-encoded), then encode each
-        // path segment individually so that '/' separators are preserved.
-        var decoded = Uri.UnescapeDataString(filePath.TrimStart('/'));
-        var encodedPath = string.Join("/", decoded.Split('/').Select(Uri.EscapeDataString));
+        var encodedPath = EncodePath(relativePath);
+        if (string.IsNullOrEmpty(encodedPath))
+            return $"{_baseUrl}/public.php/dav/files/{_shareToken}";
+
         return $"{_baseUrl}/public.php/dav/files/{_shareToken}/{encodedPath}";
     }
 
-    public async Task<List<RomInfo>> ListRomsAsync(string folder, string extension)
+    public string BuildMetadataFileUrl(string relativePath)
     {
-        var webDavUrl = $"{_baseUrl}/public.php/webdav/files/{folder.Trim('/')}/";
+        var normalized = NormalizePath(relativePath);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return BuildPublicFileUrl(_metadataPath);
 
-        var request = new HttpRequestMessage(new HttpMethod("PROPFIND"), webDavUrl);
+        return BuildPublicFileUrl($"{_metadataPath}/{normalized}");
+    }
+
+    public async Task<string?> ReadTextFileAsync(string relativePath)
+    {
+        try
+        {
+            using var response = await _http.GetAsync(BuildPublicFileUrl(relativePath));
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return await response.Content.ReadAsStringAsync();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<List<NextcloudDirectoryEntry>> ListDirectoryAsync(string relativePath = "")
+    {
+        var request = new HttpRequestMessage(new HttpMethod("PROPFIND"), BuildPublicFileUrl(relativePath));
         request.Headers.Add("Depth", "1");
-
-        var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_shareToken}:"));
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authValue);
-
         request.Content = new StringContent(
-            @"<?xml version=""1.0"" encoding=""utf-8""?>
-            <d:propfind xmlns:d=""DAV:"">
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <d:propfind xmlns:d="DAV:">
                 <d:prop>
                     <d:displayname/>
                     <d:resourcetype/>
                 </d:prop>
-            </d:propfind>",
-            Encoding.UTF8, "application/xml");
+            </d:propfind>
+            """,
+            System.Text.Encoding.UTF8,
+            "application/xml");
 
         try
         {
-            var response = await _http.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return new List<RomInfo>();
+            using var response = await _http.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return [];
 
             var xml = await response.Content.ReadAsStringAsync();
-            return ParsePropfindResponse(xml, folder, extension);
+            return ParseDirectoryListing(xml);
         }
         catch
         {
-            return new List<RomInfo>();
+            return [];
         }
     }
 
-    private List<RomInfo> ParsePropfindResponse(string xml, string folder, string extension)
+    public async Task<List<RomInfo>> ListRomsAsync(string folder, string extension)
+    {
+        var entries = await ListDirectoryAsync(folder);
+        return entries
+            .Where(e => !e.IsDirectory)
+            .Where(e => e.Name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            .Select(e => new RomInfo
+            {
+                Name = ToDisplayName(e.Name),
+                FileName = e.Name,
+                RomsetName = Path.GetFileNameWithoutExtension(e.Name).ToLowerInvariant(),
+                Url = BuildPublicFileUrl(e.RelativePath),
+            })
+            .ToList();
+    }
+
+    private List<NextcloudDirectoryEntry> ParseDirectoryListing(string xml)
     {
         XNamespace dav = "DAV:";
         var doc = XDocument.Parse(xml);
-        var roms = new List<RomInfo>();
+        var entries = new List<NextcloudDirectoryEntry>();
+        var rootPrefix = $"/public.php/dav/files/{_shareToken}/";
+        var rootPrefixNoSlash = $"/public.php/dav/files/{_shareToken}";
 
         foreach (var responseEl in doc.Descendants(dav + "response").Skip(1))
         {
-            if (responseEl.Descendants(dav + "collection").Any()) continue;
-
             var href = responseEl.Element(dav + "href")?.Value ?? "";
             var displayName = responseEl.Descendants(dav + "displayname").FirstOrDefault()?.Value ?? "";
+            var isDirectory = responseEl.Descendants(dav + "collection").Any();
 
-            var filename = !string.IsNullOrEmpty(displayName)
+            var relativePath = "";
+            if (href.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                relativePath = href[rootPrefix.Length..];
+            else if (href.StartsWith(rootPrefixNoSlash, StringComparison.OrdinalIgnoreCase))
+                relativePath = href[rootPrefixNoSlash.Length..].TrimStart('/');
+
+            var decodedRelativePath = Uri.UnescapeDataString(relativePath).Trim('/');
+            if (string.IsNullOrWhiteSpace(decodedRelativePath))
+                continue;
+
+            var name = !string.IsNullOrWhiteSpace(displayName)
                 ? displayName
-                : Uri.UnescapeDataString(href.TrimEnd('/').Split('/').Last());
+                : decodedRelativePath.Split('/').Last();
 
-            if (!filename.EndsWith(extension, StringComparison.OrdinalIgnoreCase)) continue;
-
-            roms.Add(new RomInfo
+            entries.Add(new NextcloudDirectoryEntry
             {
-                Name = ToDisplayName(filename),
-                FileName = filename,
-                RomsetName = Path.GetFileNameWithoutExtension(filename).ToLower(),
-                Url = BuildPublicFileUrl(filename),
+                Name = name,
+                RelativePath = decodedRelativePath,
+                IsDirectory = isDirectory,
             });
         }
 
-        return roms;
+        return entries;
+    }
+
+    private static string NormalizePath(string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return "";
+
+        return Uri.UnescapeDataString(rawPath).Trim().Trim('/');
+    }
+
+    private static string EncodePath(string rawPath)
+    {
+        var normalized = NormalizePath(rawPath);
+        if (string.IsNullOrEmpty(normalized))
+            return "";
+
+        return string.Join('/', normalized.Split('/').Select(Uri.EscapeDataString));
     }
 
     private static string ToDisplayName(string filename)

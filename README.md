@@ -23,6 +23,11 @@ Contract used by the frontend:
 - `Nextcloud:ShareToken` -> public share token
 - `Nextcloud:MetadataPath` -> `MetaData`
 
+Share layout expectation:
+
+- Share root (`Game`) contains ROM archives/folders.
+- `MetaData/` under share root contains `consoles.json`, `manifest.json`, thumbnails, and other metadata files.
+
 Docker renders `runtime-config.json` from `runtime-config.template.json` at startup
 using these environment variables:
 
@@ -32,8 +37,14 @@ using these environment variables:
 
 This keeps local Docker and production aligned on the same URL pattern:
 
-- File download: `GET <base>/public.php/dav/files/<token>/MetaData/consoles.json`
-- Folder listing: `PROPFIND <base>/public.php/dav/files/<token>/MetaData/` with `Depth: 1`
+- File read/download (DAV files endpoint): `GET <base>/public.php/dav/files/<token>/<path>`
+- Directory listing (WebDAV): `PROPFIND <base>/public.php/dav/files/<token>/<path>/` with `Depth: 1`
+
+Examples:
+
+- List root (`Game`): `PROPFIND <base>/public.php/dav/files/<token>/`
+- List metadata directory: `PROPFIND <base>/public.php/dav/files/<token>/MetaData/`
+- Read consoles: `GET <base>/public.php/dav/files/<token>/MetaData/consoles.json`
 
 For YunoHost production, ensure `__PATH__/nc-api/` in `yunohost-package/conf/nginx.conf`
 proxies to `https://tools.kushkurriculum.org/nextcloud/`.
